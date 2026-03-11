@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "QA Maturity Dashboard"
+version = "1.0.0"
+id = "artifacts/qa-maturity"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+localPort = 24587
+name = "web"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/qa-maturity run dev"
+
+[services.env]
+PORT = "24587"
+BASE_PATH = "/"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/qa-maturity", "run", "build"]
+publicDir = "artifacts/qa-maturity/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
