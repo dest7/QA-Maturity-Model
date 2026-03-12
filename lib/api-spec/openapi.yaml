@@ -1,15 +1,18 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: QA Maturity Model API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: teams
+    description: Team operations
+  - name: skills
+    description: Skill operations
 paths:
   /healthz:
     get:
@@ -24,6 +27,121 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /teams:
+    get:
+      operationId: getTeams
+      tags: [teams]
+      summary: Get all teams
+      responses:
+        "200":
+          description: List of teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Team"
+    post:
+      operationId: createTeam
+      tags: [teams]
+      summary: Create a new team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTeamRequest"
+      responses:
+        "201":
+          description: Created team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+  /teams/{teamId}:
+    get:
+      operationId: getTeam
+      tags: [teams]
+      summary: Get team by ID
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Team with skill levels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamDetail"
+        "404":
+          description: Team not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteTeam
+      tags: [teams]
+      summary: Delete team
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+  /teams/{teamId}/skills/{skillId}:
+    put:
+      operationId: updateSkillLevel
+      tags: [teams]
+      summary: Update skill level for a team
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: skillId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSkillLevelRequest"
+      responses:
+        "200":
+          description: Updated skill level
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamSkillLevel"
+  /skills:
+    get:
+      operationId: getSkills
+      tags: [skills]
+      summary: Get all QA skills definition
+      responses:
+        "200":
+          description: List of skills
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Skill"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +151,139 @@ components:
           type: string
       required:
         - status
-
+    Skill:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        levelDescriptions:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - name
+        - description
+        - category
+        - levelDescriptions
+    Team:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        overallLevel:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - description
+        - overallLevel
+        - createdAt
+    TeamSkillLevel:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        skillId:
+          type: integer
+        level:
+          type: integer
+      required:
+        - teamId
+        - skillId
+        - level
+    TeamDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        overallLevel:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        skillLevels:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamSkillWithInfo"
+      required:
+        - id
+        - name
+        - description
+        - overallLevel
+        - createdAt
+        - skillLevels
+    TeamSkillWithInfo:
+      type: object
+      properties:
+        skillId:
+          type: integer
+        skillName:
+          type: string
+        skillCategory:
+          type: string
+        skillDescription:
+          type: string
+        levelDescriptions:
+          type: array
+          items:
+            type: string
+        level:
+          type: integer
+      required:
+        - skillId
+        - skillName
+        - skillCategory
+        - skillDescription
+        - levelDescriptions
+        - level
+    CreateTeamRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+      required:
+        - name
+        - description
+    UpdateSkillLevelRequest:
+      type: object
+      properties:
+        level:
+          type: integer
+          minimum: 0
+          maximum: 3
+      required:
+        - level
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success

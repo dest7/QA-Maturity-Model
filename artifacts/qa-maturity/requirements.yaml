@@ -1,0 +1,13 @@
+packages:
+  "framer-motion": "For smooth layout transitions and staggered card animations"
+  "recharts": "For the Maturity Radar visualization"
+  "react-hook-form": "For robust team creation forms"
+  "@hookform/resolvers": "Zod schema validation for the forms"
+  "clsx": "Utility for conditionally joining classNames"
+  "tailwind-merge": "Utility to resolve Tailwind class conflicts"
+
+images: []
+
+notes:
+  - Uses `@workspace/api-client-react` for data fetching hooks
+  - Relies on Replit's unified reverse proxy and base TanStack setup
