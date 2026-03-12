@@ -15,6 +15,9 @@ export interface Skill {
   description: string;
   category: string;
   levelDescriptions: string[];
+  levelRequirements: string[];
+  levelArtifacts: string[];
+  levelRecommendations: string[];
 }
 
 export interface Team {
@@ -37,6 +40,9 @@ export interface TeamSkillWithInfo {
   skillCategory: string;
   skillDescription: string;
   levelDescriptions: string[];
+  levelRequirements: string[];
+  levelArtifacts: string[];
+  levelRecommendations: string[];
   level: number;
 }
 

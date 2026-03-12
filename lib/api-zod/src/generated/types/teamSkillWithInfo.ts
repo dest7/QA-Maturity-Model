@@ -12,5 +12,8 @@ export interface TeamSkillWithInfo {
   skillCategory: string;
   skillDescription: string;
   levelDescriptions: string[];
+  levelRequirements: string[];
+  levelArtifacts: string[];
+  levelRecommendations: string[];
   level: number;
 }

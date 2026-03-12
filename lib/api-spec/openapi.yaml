@@ -166,12 +166,27 @@ components:
           type: array
           items:
             type: string
+        levelRequirements:
+          type: array
+          items:
+            type: string
+        levelArtifacts:
+          type: array
+          items:
+            type: string
+        levelRecommendations:
+          type: array
+          items:
+            type: string
       required:
         - id
         - name
         - description
         - category
         - levelDescriptions
+        - levelRequirements
+        - levelArtifacts
+        - levelRecommendations
     Team:
       type: object
       properties:
@@ -245,6 +260,18 @@ components:
           type: array
           items:
             type: string
+        levelRequirements:
+          type: array
+          items:
+            type: string
+        levelArtifacts:
+          type: array
+          items:
+            type: string
+        levelRecommendations:
+          type: array
+          items:
+            type: string
         level:
           type: integer
       required:
@@ -253,6 +280,9 @@ components:
         - skillCategory
         - skillDescription
         - levelDescriptions
+        - levelRequirements
+        - levelArtifacts
+        - levelRecommendations
         - level
     CreateTeamRequest:
       type: object

@@ -12,4 +12,7 @@ export interface Skill {
   description: string;
   category: string;
   levelDescriptions: string[];
+  levelRequirements: string[];
+  levelArtifacts: string[];
+  levelRecommendations: string[];
 }

@@ -55,6 +55,9 @@ export const GetTeamResponse = zod.object({
       skillCategory: zod.string(),
       skillDescription: zod.string(),
       levelDescriptions: zod.array(zod.string()),
+      levelRequirements: zod.array(zod.string()),
+      levelArtifacts: zod.array(zod.string()),
+      levelRecommendations: zod.array(zod.string()),
       level: zod.number(),
     }),
   ),
@@ -104,5 +107,8 @@ export const GetSkillsResponseItem = zod.object({
   description: zod.string(),
   category: zod.string(),
   levelDescriptions: zod.array(zod.string()),
+  levelRequirements: zod.array(zod.string()),
+  levelArtifacts: zod.array(zod.string()),
+  levelRecommendations: zod.array(zod.string()),
 });
 export const GetSkillsResponse = zod.array(GetSkillsResponseItem);

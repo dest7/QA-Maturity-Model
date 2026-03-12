@@ -8,6 +8,9 @@ export const skillsTable = pgTable("skills", {
   description: text("description").notNull(),
   category: text("category").notNull(),
   levelDescriptions: text("level_descriptions").array().notNull(),
+  levelRequirements: text("level_requirements").array().notNull().default([]),
+  levelArtifacts: text("level_artifacts").array().notNull().default([]),
+  levelRecommendations: text("level_recommendations").array().notNull().default([]),
 });
 
 export const teamsTable = pgTable("teams", {

@@ -62,6 +62,9 @@ router.get("/:teamId", async (req, res) => {
       skillCategory: skillsTable.category,
       skillDescription: skillsTable.description,
       levelDescriptions: skillsTable.levelDescriptions,
+      levelRequirements: skillsTable.levelRequirements,
+      levelArtifacts: skillsTable.levelArtifacts,
+      levelRecommendations: skillsTable.levelRecommendations,
       level: teamSkillLevelsTable.level,
     })
     .from(teamSkillLevelsTable)

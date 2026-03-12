@@ -1,17 +1,27 @@
 import { useUpdateSkillLevel, getGetTeamQueryKey, getGetTeamsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Minus, Plus, Loader2 } from "lucide-react";
+import { Minus, Plus, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
+
+const LEVEL_COLORS = {
+  0: { bar: "bg-slate-500", glow: "shadow-[0_0_8px_rgba(100,116,139,0.5)]", text: "text-slate-400", badge: "bg-slate-500/10 text-slate-300 border-slate-500/30" },
+  1: { bar: "bg-amber-500", glow: "shadow-[0_0_8px_rgba(245,158,11,0.5)]", text: "text-amber-500", badge: "bg-amber-500/10 text-amber-300 border-amber-500/30" },
+  2: { bar: "bg-blue-500", glow: "shadow-[0_0_8px_rgba(59,130,246,0.5)]", text: "text-blue-500", badge: "bg-blue-500/10 text-blue-300 border-blue-500/30" },
+  3: { bar: "bg-emerald-500", glow: "shadow-[0_0_8px_rgba(16,185,129,0.5)]", text: "text-emerald-500", badge: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" },
+} as const;
+
+const LEVEL_LABELS = ["Initial", "Developing", "Defined", "Optimized"];
 
 export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
   const queryClient = useQueryClient();
+  const [expanded, setExpanded] = useState(false);
 
   const { mutate, isPending } = useUpdateSkillLevel({
     mutation: {
       onSuccess: () => {
-        // Invalidate to fetch fresh stats and overarching level
         queryClient.invalidateQueries({ queryKey: getGetTeamQueryKey(teamId) });
         queryClient.invalidateQueries({ queryKey: getGetTeamsQueryKey() });
       },
@@ -23,13 +33,21 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
     mutate({ teamId, skillId: skill.skillId, data: { level: newLevel } });
   };
 
+  const colors = LEVEL_COLORS[skill.level as keyof typeof LEVEL_COLORS];
+  const hasNextLevel = skill.level < 3;
+
   return (
-    <Card className="group border-border/40 hover:border-primary/40 bg-card/30 hover:bg-card/60 backdrop-blur-sm transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-primary/5">
+    <Card className="group border-border/40 hover:border-primary/40 bg-card/30 hover:bg-card/60 backdrop-blur-sm transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-primary/5 flex flex-col">
       <CardHeader className="p-5 pb-3">
         <div className="flex justify-between items-start gap-4">
-          <CardTitle className="text-base font-semibold font-display tracking-tight text-foreground/90 group-hover:text-primary transition-colors leading-tight">
-            {skill.skillName}
-          </CardTitle>
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-base font-semibold tracking-tight text-foreground/90 group-hover:text-primary transition-colors leading-tight mb-1">
+              {skill.skillName}
+            </CardTitle>
+            <span className={cn("inline-flex items-center text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border", colors.badge)}>
+              {LEVEL_LABELS[skill.level]}
+            </span>
+          </div>
           <div className="flex items-center shrink-0 bg-background/90 rounded-lg p-0.5 border border-border/50 shadow-inner">
             <Button
               variant="ghost"
@@ -55,33 +73,68 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-5 pt-0 flex flex-col gap-4">
+
+      <CardContent className="p-5 pt-0 flex flex-col gap-3 flex-1">
         {/* Segmented Progress Bar */}
         <div className="flex gap-1.5 h-2 w-full">
           {[0, 1, 2, 3].map((l) => {
-            let bgClass = "bg-secondary"; // Default empty track
-            if (l <= skill.level) {
-              if (l === 0) bgClass = "bg-slate-500 shadow-[0_0_8px_rgba(100,116,139,0.5)]";
-              if (l === 1) bgClass = "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]";
-              if (l === 2) bgClass = "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]";
-              if (l === 3) bgClass = "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
-            }
+            const c = LEVEL_COLORS[l as keyof typeof LEVEL_COLORS];
+            const active = l <= skill.level;
             return (
               <div
                 key={l}
                 className={cn(
                   "flex-1 rounded-full transition-all duration-500 ease-out",
-                  bgClass,
-                  l <= skill.level ? "opacity-100" : "opacity-40"
+                  active ? `${c.bar} ${c.glow}` : "bg-secondary opacity-40"
                 )}
               />
             );
           })}
         </div>
-        
-        <div className="text-xs text-muted-foreground/80 leading-relaxed min-h-[3rem] bg-background/30 p-2.5 rounded-lg border border-border/30">
-          {skill.levelDescriptions[skill.level]}
+
+        {/* Current level description */}
+        <div className="text-xs text-muted-foreground/80 leading-relaxed bg-background/30 p-2.5 rounded-lg border border-border/30">
+          {skill.levelDescriptions?.[skill.level]}
         </div>
+
+        {/* Expand/Collapse table */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full h-7 text-xs text-muted-foreground/60 hover:text-primary hover:bg-primary/5 gap-1.5 border border-border/20 rounded-lg"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          {expanded ? "Скрыть детали" : "Показать требования и рекомендации"}
+        </Button>
+
+        {/* Details Table */}
+        {expanded && (
+          <div className="rounded-xl overflow-hidden border border-border/40 text-xs">
+            <div className="grid grid-cols-3 bg-background/60">
+              <div className="px-3 py-2 font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px] border-b border-border/30 border-r border-border/30">
+                Требования к уровню {skill.level}
+              </div>
+              <div className="px-3 py-2 font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px] border-b border-border/30 border-r border-border/30">
+                Артефакты подтверждения
+              </div>
+              <div className="px-3 py-2 font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px] border-b border-border/30">
+                {hasNextLevel ? `Рекомендации к уровню ${skill.level + 1}` : "Практики поддержания"}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 bg-card/20">
+              <div className="px-3 py-3 text-foreground/75 leading-relaxed border-r border-border/30">
+                {skill.levelRequirements?.[skill.level] || "—"}
+              </div>
+              <div className="px-3 py-3 text-foreground/75 leading-relaxed border-r border-border/30">
+                {skill.levelArtifacts?.[skill.level] || "—"}
+              </div>
+              <div className={cn("px-3 py-3 leading-relaxed", hasNextLevel ? "text-primary/80" : "text-emerald-400/80")}>
+                {skill.levelRecommendations?.[skill.level] || "—"}
+              </div>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
