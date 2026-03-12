@@ -1,12 +1,15 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { teamsTable, skillsTable, teamSkillLevelsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull, isNotNull } from "drizzle-orm";
 import {
   CreateTeamBody,
   UpdateSkillLevelBody,
+  UpdateTeamBody,
   GetTeamParams,
   DeleteTeamParams,
+  UpdateTeamParams,
+  RestoreTeamParams,
   UpdateSkillLevelParams,
 } from "@workspace/api-zod";
 
@@ -24,7 +27,20 @@ function calculateOverallLevel(skillLevels: { level: number }[]): number {
 }
 
 router.get("/", async (_req, res) => {
-  const teams = await db.select().from(teamsTable).orderBy(teamsTable.id);
+  const teams = await db
+    .select()
+    .from(teamsTable)
+    .where(isNull(teamsTable.deletedAt))
+    .orderBy(teamsTable.id);
+  res.json(teams);
+});
+
+router.get("/deleted", async (_req, res) => {
+  const teams = await db
+    .select()
+    .from(teamsTable)
+    .where(isNotNull(teamsTable.deletedAt))
+    .orderBy(teamsTable.id);
   res.json(teams);
 });
 
@@ -75,10 +91,58 @@ router.get("/:teamId", async (req, res) => {
   res.json({ ...team[0], skillLevels });
 });
 
+router.put("/:teamId", async (req, res) => {
+  const { teamId } = UpdateTeamParams.parse(req.params);
+  const body = UpdateTeamBody.parse(req.body);
+
+  const existing = await db.select().from(teamsTable).where(eq(teamsTable.id, teamId));
+  if (existing.length === 0) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+
+  const [updated] = await db
+    .update(teamsTable)
+    .set({ name: body.name, description: body.description })
+    .where(eq(teamsTable.id, teamId))
+    .returning();
+
+  res.json(updated);
+});
+
 router.delete("/:teamId", async (req, res) => {
   const { teamId } = DeleteTeamParams.parse(req.params);
-  await db.delete(teamsTable).where(eq(teamsTable.id, teamId));
+
+  const existing = await db.select().from(teamsTable).where(eq(teamsTable.id, teamId));
+  if (existing.length === 0) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+
+  await db
+    .update(teamsTable)
+    .set({ deletedAt: new Date() })
+    .where(eq(teamsTable.id, teamId));
+
   res.json({ success: true });
+});
+
+router.post("/:teamId/restore", async (req, res) => {
+  const { teamId } = RestoreTeamParams.parse(req.params);
+
+  const existing = await db.select().from(teamsTable).where(eq(teamsTable.id, teamId));
+  if (existing.length === 0) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+
+  const [restored] = await db
+    .update(teamsTable)
+    .set({ deletedAt: null })
+    .where(eq(teamsTable.id, teamId))
+    .returning();
+
+  res.json(restored);
 });
 
 router.put("/:teamId/skills/:skillId", async (req, res) => {

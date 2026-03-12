@@ -19,6 +19,7 @@ export const teamsTable = pgTable("teams", {
   description: text("description").notNull(),
   overallLevel: integer("overall_level").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
 });
 
 export const teamSkillLevelsTable = pgTable("team_skill_levels", {

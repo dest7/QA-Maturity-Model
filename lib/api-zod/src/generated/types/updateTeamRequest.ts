@@ -6,11 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface Team {
-  id: number;
+export interface UpdateTeamRequest {
   name: string;
   description: string;
-  overallLevel: number;
-  createdAt: Date;
-  deletedAt?: Date | null;
 }

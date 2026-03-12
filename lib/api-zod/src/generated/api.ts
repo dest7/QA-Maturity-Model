@@ -24,6 +24,7 @@ export const GetTeamsResponseItem = zod.object({
   description: zod.string(),
   overallLevel: zod.number(),
   createdAt: zod.date(),
+  deletedAt: zod.date().nullish(),
 });
 export const GetTeamsResponse = zod.array(GetTeamsResponseItem);
 
@@ -34,6 +35,19 @@ export const CreateTeamBody = zod.object({
   name: zod.string(),
   description: zod.string(),
 });
+
+/**
+ * @summary Get soft-deleted teams
+ */
+export const GetDeletedTeamsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string(),
+  overallLevel: zod.number(),
+  createdAt: zod.date(),
+  deletedAt: zod.date().nullish(),
+});
+export const GetDeletedTeamsResponse = zod.array(GetDeletedTeamsResponseItem);
 
 /**
  * @summary Get team by ID
@@ -64,7 +78,28 @@ export const GetTeamResponse = zod.object({
 });
 
 /**
- * @summary Delete team
+ * @summary Update team name and description
+ */
+export const UpdateTeamParams = zod.object({
+  teamId: zod.coerce.number(),
+});
+
+export const UpdateTeamBody = zod.object({
+  name: zod.string(),
+  description: zod.string(),
+});
+
+export const UpdateTeamResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string(),
+  overallLevel: zod.number(),
+  createdAt: zod.date(),
+  deletedAt: zod.date().nullish(),
+});
+
+/**
+ * @summary Soft-delete team (keeps record, sets deletedAt)
  */
 export const DeleteTeamParams = zod.object({
   teamId: zod.coerce.number(),
@@ -72,6 +107,22 @@ export const DeleteTeamParams = zod.object({
 
 export const DeleteTeamResponse = zod.object({
   success: zod.boolean(),
+});
+
+/**
+ * @summary Restore a soft-deleted team
+ */
+export const RestoreTeamParams = zod.object({
+  teamId: zod.coerce.number(),
+});
+
+export const RestoreTeamResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string(),
+  overallLevel: zod.number(),
+  createdAt: zod.date(),
+  deletedAt: zod.date().nullish(),
 });
 
 /**

@@ -16,3 +16,4 @@ export * from "./teamDetail";
 export * from "./teamSkillLevel";
 export * from "./teamSkillWithInfo";
 export * from "./updateSkillLevelRequest";
+export * from "./updateTeamRequest";

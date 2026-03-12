@@ -26,6 +26,7 @@ export interface Team {
   description: string;
   overallLevel: number;
   createdAt: string;
+  deletedAt?: string | null;
 }
 
 export interface TeamSkillLevel {
@@ -56,6 +57,11 @@ export interface TeamDetail {
 }
 
 export interface CreateTeamRequest {
+  name: string;
+  description: string;
+}
+
+export interface UpdateTeamRequest {
   name: string;
   description: string;
 }
