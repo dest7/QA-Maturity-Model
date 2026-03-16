@@ -1,3 +1,34 @@
+/**
+ * Корневой layout приложения.
+ *
+ * Отвечает за:
+ * 1. Боковую панель (sidebar) со списком команд, кнопками редактирования/архивации
+ *    и разделом архивных команд.
+ * 2. Монтирование модальных окон: EditTeamModal и AlertDialog подтверждения удаления.
+ * 3. Основную область контента (main), куда рендерятся дочерние роуты.
+ *
+ * Управление состоянием:
+ *   editingTeam      — хранит данные команды, открытой в модале редактирования (null = закрыт)
+ *   deleteConfirmId  — id команды, которую пользователь хочет архивировать (null = диалог закрыт)
+ *   showArchived     — булев флаг раскрытия секции "Архив" в сайдбаре
+ *
+ * Soft-delete (архивирование):
+ *   Кнопка удаления открывает AlertDialog с описанием последствий.
+ *   После подтверждения вызывается useDeleteTeam → PUT /api/teams/:id с deletedAt=now().
+ *   Если удалённая команда была активна в роутере (/team/:id), происходит редирект на главную.
+ *   После успеха инвалидируются оба React Query кэша: активных и удалённых команд.
+ *
+ * Восстановление из архива:
+ *   Секция "Архив" видна только если есть удалённые команды (hasDeletedTeams).
+ *   Кнопка RotateCcw вызывает useRestoreTeam → POST /api/teams/:id/restore.
+ *   После восстановления команда снова появляется в активном списке.
+ *
+ * Анимации:
+ *   Индикатор активной команды в сайдбаре (layoutId="active-indicator") анимируется
+ *   через framer-motion shared layout: плавно перемещается при смене выбранной команды.
+ *   Секция архива появляется/скрывается с анимацией высоты (AnimatePresence + height: "auto").
+ */
+
 import { useState } from "react";
 import { Link, useRoute, useLocation } from "wouter";
 import {
@@ -45,6 +76,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         queryClient.invalidateQueries({ queryKey: getGetTeamsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetDeletedTeamsQueryKey() });
         toast({ title: "Команда перемещена в архив", description: "Запись сохранена — её можно восстановить." });
+        // Если удалили текущую открытую команду — уходим на главную
         if (match && params?.id === String(variables.teamId)) {
           setLocation("/");
         }
@@ -75,8 +107,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      {/* Боковая панель */}
       <aside className="w-72 flex flex-col bg-sidebar border-r border-sidebar-border z-20 shadow-2xl shadow-black/20">
-        {/* Logo */}
+        {/* Логотип */}
         <div className="p-6 border-b border-sidebar-border">
           <Link href="/" className="flex items-center gap-3 cursor-pointer group">
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40 transition-all shadow-inner">
@@ -89,7 +122,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
 
-        {/* Teams list */}
+        {/* Список активных команд */}
         <div className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
           <div className="text-[11px] font-bold text-sidebar-foreground/40 uppercase tracking-widest mb-4 px-2 mt-2 flex items-center gap-2">
             <BarChart2 size={12} /> Active Teams
@@ -117,6 +150,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                         : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     )}
                   >
+                    {/* Анимированный индикатор активной команды (framer-motion shared layout) */}
                     {isActive && (
                       <motion.div
                         layoutId="active-indicator"
@@ -132,6 +166,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       )}
                     />
                     <span className="font-medium text-sm truncate flex-1">{team.name}</span>
+                    {/* Бейдж с текущим общим уровнем зрелости команды */}
                     <span
                       className={cn(
                         "text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border transition-colors shrink-0",
@@ -144,7 +179,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     </span>
                   </Link>
 
-                  {/* Edit / Delete action buttons — appear on row hover */}
+                  {/* Кнопки редактирования и архивирования — появляются при наведении на строку */}
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
                     <button
                       onClick={(e) => {
@@ -174,7 +209,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             })
           )}
 
-          {/* Archived teams section */}
+          {/* Секция архивных команд (видна только если есть удалённые команды) */}
           {hasDeletedTeams && (
             <div className="mt-6">
               <button
@@ -186,6 +221,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <span className="ml-auto">{showArchived ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</span>
               </button>
 
+              {/* Анимированное раскрытие списка архивных команд */}
               <AnimatePresence>
                 {showArchived && (
                   <motion.div
@@ -219,7 +255,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
-        {/* Add new team */}
+        {/* Кнопка добавления новой команды */}
         <div className="p-4 border-t border-sidebar-border bg-sidebar/50">
           <CreateTeamModal
             trigger={
@@ -235,6 +271,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
+      {/* Основная область контента */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/5 via-background to-background pointer-events-none" />
         <div className="flex-1 overflow-y-auto z-10 p-6 md:p-10 custom-scrollbar">
@@ -242,7 +279,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </main>
 
-      {/* Edit modal */}
+      {/* Модальное окно редактирования команды */}
       {editingTeam && (
         <EditTeamModal
           team={editingTeam}
@@ -251,7 +288,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      {/* Delete confirmation dialog */}
+      {/* Диалог подтверждения архивирования */}
       <AlertDialog open={deleteConfirmId !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
         <AlertDialogContent className="bg-card border-border/60 shadow-2xl shadow-black/50">
           <AlertDialogHeader>

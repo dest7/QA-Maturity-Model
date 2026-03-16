@@ -1,3 +1,29 @@
+/**
+ * Автоматический seed (заполнение начальными данными) базы данных.
+ *
+ * Алгоритм seedIfEmpty():
+ * 1. Проверяем наличие хотя бы одной записи в таблице skills (LIMIT 1).
+ * 2. Если данные есть — логируем "already seeded" и выходим без изменений (идемпотентность).
+ * 3. Если база пустая — вставляем 15 навыков и 5 тестовых команд.
+ *
+ * Seed запускается автоматически при старте API-сервера (вызов в index.ts).
+ * Это гарантирует, что продакшен-база заполнится данными при первом деплое,
+ * без необходимости вручную запускать скрипты.
+ *
+ * Структура данных навыков:
+ *   Каждый навык имеет 4 уровня зрелости (0–3) и три массива по 4 строки:
+ *   - levelRequirements[N]    — что должна выполнять команда для уровня N
+ *   - levelArtifacts[N]       — артефакты, доказывающие достижение уровня N
+ *   - levelRecommendations[N] — как перейти с уровня N на N+1
+ *
+ * Тестовые команды созданы с разными профилями уровней для демонстрации:
+ *   Team Alpha   — уровень 0 (Initial), большинство навыков 0-1
+ *   Team Beta    — уровень 1 (Developing)
+ *   Team Gamma   — уровень 2 (Defined)
+ *   Team Delta   — уровень 3 (Optimized), почти все навыки на 3
+ *   Team Epsilon — смешанный профиль уровень 1-2
+ */
+
 import { db, skillsTable, teamsTable, teamSkillLevelsTable } from "@workspace/db";
 
 const SKILLS = [
@@ -466,6 +492,10 @@ const SAMPLE_TEAMS = [
   },
 ];
 
+/**
+ * Локальная копия алгоритма расчёта общего уровня (см. основной алгоритм в routes/teams.ts).
+ * Нужна здесь, чтобы при создании тестовых команд сразу записать корректный overallLevel.
+ */
 function calculateOverallLevel(levels: number[]): number {
   const total = levels.length;
   if (total === 0) return 0;
@@ -477,6 +507,7 @@ function calculateOverallLevel(levels: number[]): number {
 }
 
 export async function seedIfEmpty(): Promise<void> {
+  // Проверяем наличие данных — достаточно одной записи
   const existing = await db.select().from(skillsTable).limit(1);
   if (existing.length > 0) {
     console.log("Database already seeded — skipping.");
@@ -485,9 +516,11 @@ export async function seedIfEmpty(): Promise<void> {
 
   console.log("Empty database detected — seeding initial data...");
 
+  // Вставляем все 15 навыков и получаем обратно ID для связки с командами
   const insertedSkills = await db.insert(skillsTable).values(SKILLS).returning();
   console.log(`  ✓ Inserted ${insertedSkills.length} skills`);
 
+  // Создаём каждую тестовую команду и её уровни навыков
   for (const teamData of SAMPLE_TEAMS) {
     const overallLevel = calculateOverallLevel(teamData.skillLevels);
     const [team] = await db

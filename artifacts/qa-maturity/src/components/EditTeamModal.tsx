@@ -1,3 +1,22 @@
+/**
+ * Модальное окно редактирования команды.
+ *
+ * Позволяет изменить название и описание команды.
+ * Использует react-hook-form + Zod для управления формой и валидации:
+ *   - name: минимум 3 символа
+ *   - description: минимум 5 символов
+ *
+ * Синхронизация данных формы с пропсами:
+ *   useEffect сбрасывает значения полей при каждом открытии модала (open = true).
+ *   Это нужно, если пользователь открыл модал одной команды, закрыл, потом открыл другой —
+ *   без reset() форма показывала бы данные предыдущей команды.
+ *
+ * После успешного сохранения:
+ *   - Инвалидируются кэши getGetTeamsQueryKey() и getGetTeamQueryKey(team.id)
+ *   - Показывается toast с подтверждением
+ *   - Модал закрывается через onOpenChange(false)
+ */
+
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -26,6 +45,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
+// Zod-схема валидации формы
 const formSchema = z.object({
   name: z.string().min(3, "Название должно содержать минимум 3 символа"),
   description: z.string().min(5, "Описание должно содержать минимум 5 символов"),
@@ -46,6 +66,7 @@ export function EditTeamModal({ team, open, onOpenChange }: EditTeamModalProps) 
     defaultValues: { name: team.name, description: team.description },
   });
 
+  // Сбрасываем форму при каждом открытии — подтягиваем актуальные данные команды
   useEffect(() => {
     if (open) {
       form.reset({ name: team.name, description: team.description });

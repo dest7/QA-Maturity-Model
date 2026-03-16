@@ -1,3 +1,20 @@
+/**
+ * Страница-заглушка корневого маршрута ("/").
+ *
+ * Логика поведения:
+ * 1. Пока данные загружаются — показываем спиннер.
+ * 2. Если команды есть — автоматически редиректим на первую команду (/team/:id).
+ *    Это создаёт UX, при котором пользователь сразу попадает на дашборд,
+ *    а не видит пустой экран при открытии приложения.
+ * 3. Если команд нет — показываем welcome-экран с кнопкой создания первой команды.
+ * 4. Если состояние неопределённо (переход между состояниями) — текстовая заглушка.
+ *
+ * Редирект реализован через useEffect + setLocation (wouter), а не через <Redirect />,
+ * чтобы не вызывать его синхронно во время рендера (React предупреждение).
+ * Условие `location === "/"` предотвращает бесконечный редирект, если пользователь
+ * уже находится на /team/:id и данные перезагрузились.
+ */
+
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { useGetTeams } from "@workspace/api-client-react";
@@ -11,7 +28,7 @@ export function DashboardView() {
 
   useEffect(() => {
     if (!isLoading && teams && teams.length > 0 && location === "/") {
-      // Auto-navigate to the first team's dashboard if it exists
+      // Автоматически переходим на дашборд первой команды
       setLocation(`/team/${teams[0].id}`);
     }
   }, [teams, isLoading, location, setLocation]);
@@ -24,6 +41,7 @@ export function DashboardView() {
     );
   }
 
+  // Welcome-экран для пустой базы данных
   if (teams?.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in duration-700">
@@ -45,7 +63,7 @@ export function DashboardView() {
     );
   }
 
-  // Fallback if navigating between states
+  // Заглушка при переходных состояниях роутера
   return (
     <div className="h-full flex items-center justify-center text-muted-foreground/50 font-medium">
       Select a team from the sidebar to view its dashboard.

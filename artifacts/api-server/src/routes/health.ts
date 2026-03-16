@@ -1,3 +1,15 @@
+/**
+ * Health-check эндпоинт.
+ *
+ * GET /api/healthz
+ *
+ * Используется системами мониторинга и балансировщиками нагрузки для проверки
+ * того, что сервер жив и принимает запросы. Ответ проходит валидацию через
+ * Zod-схему HealthCheckResponse, что гарантирует соответствие OpenAPI-спецификации.
+ *
+ * Возвращает: { status: "ok" }
+ */
+
 import { Router, type IRouter } from "express";
 import { HealthCheckResponse } from "@workspace/api-zod";
 

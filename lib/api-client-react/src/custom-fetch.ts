@@ -1,3 +1,31 @@
+/**
+ * Кастомный HTTP-клиент для Orval-сгенерированных хуков.
+ *
+ * Orval по умолчанию поддерживает axios или встроенный fetch. Этот файл предоставляет
+ * альтернативную реализацию на основе нативного fetch с дополнительными возможностями:
+ *
+ * Ключевые особенности:
+ * - Автоматическое определение Content-Type: если тело запроса выглядит как JSON
+ *   (начинается с { или [), заголовок Content-Type: application/json ставится автоматически.
+ * - Умная обработка ответов (inferResponseType): по Content-Type ответа решаем,
+ *   парсить его как JSON, текст или бинарный blob.
+ * - Типизированные ошибки: все HTTP-ошибки (4xx, 5xx) оборачиваются в класс ApiError
+ *   с полями status, statusText, data (тело ответа), headers, url, method.
+ *   Это позволяет обработчикам ошибок в UI точно знать, что пошло не так.
+ * - ResponseParseError: отдельный класс ошибки для случаев, когда сервер вернул 200,
+ *   но тело невалидный JSON.
+ * - BOM-stripping: удаляет BOM (\uFEFF) из начала текстовых ответов — встречается
+ *   в ответах некоторых Windows-серверов.
+ * - Защита от ошибок HEAD/GET с телом: выбрасывает TypeError при попытке отправить
+ *   тело в GET или HEAD запросе.
+ * - Совместимость с React Native: где-то полифилл URL работает иначе, поэтому
+ *   проверки instanceof URL обёрнуты с защитой.
+ *
+ * Классы ошибок:
+ *   ApiError          — HTTP-ошибка (4xx, 5xx)
+ *   ResponseParseError — невозможно распарсить тело успешного ответа
+ */
+
 export type CustomFetchOptions = RequestInit & {
   responseType?: "json" | "text" | "blob" | "auto";
 };
@@ -19,8 +47,7 @@ function resolveMethod(input: RequestInfo | URL, explicitMethod?: string): strin
   return "GET";
 }
 
-// Use loose check for URL — some runtimes (e.g. React Native) polyfill URL
-// differently, so `instanceof URL` can fail.
+// Loose check для URL — некоторые среды (React Native) по-другому полифиллят URL
 function isUrl(input: RequestInfo | URL): input is URL {
   return typeof URL !== "undefined" && input instanceof URL;
 }
@@ -64,8 +91,7 @@ function isTextMediaType(mediaType: string | null): boolean {
   );
 }
 
-// Loose equality (`== null`) handles both `null` (browser) and `undefined`
-// (React Native, which doesn't implement ReadableStream body).
+// Loose equality (== null) обрабатывает и null (браузер), и undefined (React Native)
 function hasNoBody(response: Response, method: string): boolean {
   if (method === "HEAD") return true;
   if (NO_BODY_STATUS.has(response.status)) return true;
@@ -97,6 +123,8 @@ function truncate(text: string, maxLength = 300): string {
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
+// Строит читаемое сообщение об ошибке из тела HTTP-ответа
+// Поддерживает форматы: строка, RFC 7807 Problem Details (title/detail), message/error
 function buildErrorMessage(response: Response, data: unknown): string {
   const prefix = `HTTP ${response.status} ${response.statusText}`;
 
@@ -207,7 +235,7 @@ async function parseErrorBody(response: Response, method: string): Promise<unkno
 
   const mediaType = getMediaType(response.headers);
 
-  // Fall back to text when blob() is unavailable (e.g. some React Native builds).
+  // Fallback к text если blob() недоступен (некоторые сборки React Native)
   if (mediaType && !isJsonMediaType(mediaType) && !isTextMediaType(mediaType)) {
     return typeof response.blob === "function" ? response.blob() : response.text();
   }
@@ -271,6 +299,14 @@ async function parseSuccessBody(
   }
 }
 
+/**
+ * Основная функция выполнения HTTP-запросов.
+ * Используется всеми сгенерированными Orval-хуками.
+ *
+ * @param input  — URL строкой, объектом URL или объектом Request
+ * @param options — стандартные параметры RequestInit + опциональный responseType
+ * @returns      — типизированный ответ T или выбрасывает ApiError / ResponseParseError
+ */
 export async function customFetch<T = unknown>(
   input: RequestInfo | URL,
   options: CustomFetchOptions = {},
@@ -285,6 +321,7 @@ export async function customFetch<T = unknown>(
 
   const headers = mergeHeaders(isRequest(input) ? input.headers : undefined, headersInit);
 
+  // Автоматически добавляем Content-Type: application/json для JSON-тел
   if (
     typeof init.body === "string" &&
     !headers.has("content-type") &&

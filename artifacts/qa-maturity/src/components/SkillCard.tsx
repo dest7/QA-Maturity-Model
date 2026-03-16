@@ -1,3 +1,30 @@
+/**
+ * Карточка навыка (SkillCard).
+ *
+ * Отображает один QA-навык с его текущим уровнем и позволяет изменять его.
+ *
+ * Взаимодействие с сервером:
+ *   При нажатии + или − вызывается хук useUpdateSkillLevel (PUT /api/teams/:id/skills/:skillId).
+ *   После успешного ответа инвалидируются два React Query кэша:
+ *     - getGetTeamQueryKey(teamId)  — чтобы обновился overallLevel и radar chart
+ *     - getGetTeamsQueryKey()       — чтобы обновился бейдж Lx в сайдбаре
+ *   Во время запроса (isPending) кнопки заблокированы, цифра заменяется спиннером.
+ *
+ * Визуальная система уровней (LEVEL_COLORS):
+ *   0 — серый    (slate)   — Initial
+ *   1 — жёлтый   (amber)   — Developing
+ *   2 — синий    (blue)    — Defined
+ *   3 — зелёный  (emerald) — Optimized
+ *
+ * Сегментированный прогресс-бар:
+ *   4 сегмента (по одному на уровень). Сегменты с индексом <= currentLevel подсвечиваются
+ *   цветом соответствующего уровня с glow-эффектом (box-shadow).
+ *
+ * Таблица деталей (раскрываемая):
+ *   Показывает данные для ТЕКУЩЕГО уровня навыка из массивов levelRequirements/Artifacts/Recommendations.
+ *   Третья колонка — "Рекомендации к следующему уровню", если уровень < 3, иначе "Практики поддержания".
+ */
+
 import { useUpdateSkillLevel, getGetTeamQueryKey, getGetTeamsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Minus, Plus, Loader2, ChevronDown, ChevronUp } from "lucide-react";
@@ -6,6 +33,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
+// Цветовая система уровней: цвет полоски прогресса, свечения, текста и бейджа
 const LEVEL_COLORS = {
   0: { bar: "bg-slate-500", glow: "shadow-[0_0_8px_rgba(100,116,139,0.5)]", text: "text-slate-400", badge: "bg-slate-500/10 text-slate-300 border-slate-500/30" },
   1: { bar: "bg-amber-500", glow: "shadow-[0_0_8px_rgba(245,158,11,0.5)]", text: "text-amber-500", badge: "bg-amber-500/10 text-amber-300 border-amber-500/30" },
@@ -22,6 +50,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
   const { mutate, isPending } = useUpdateSkillLevel({
     mutation: {
       onSuccess: () => {
+        // Инвалидируем оба кэша, чтобы данные обновились везде на странице
         queryClient.invalidateQueries({ queryKey: getGetTeamQueryKey(teamId) });
         queryClient.invalidateQueries({ queryKey: getGetTeamsQueryKey() });
       },
@@ -29,6 +58,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
   });
 
   const handleUpdate = (newLevel: number) => {
+    // Защита от выхода за границы (0–3) и от двойного клика во время запроса
     if (newLevel < 0 || newLevel > 3 || isPending) return;
     mutate({ teamId, skillId: skill.skillId, data: { level: newLevel } });
   };
@@ -48,6 +78,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
               {LEVEL_LABELS[skill.level]}
             </span>
           </div>
+          {/* Контрол изменения уровня: − [цифра] + */}
           <div className="flex items-center shrink-0 bg-background/90 rounded-lg p-0.5 border border-border/50 shadow-inner">
             <Button
               variant="ghost"
@@ -75,7 +106,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
       </CardHeader>
 
       <CardContent className="p-5 pt-0 flex flex-col gap-3 flex-1">
-        {/* Segmented Progress Bar */}
+        {/* Сегментированный прогресс-бар: 4 сегмента, активны те, что <= currentLevel */}
         <div className="flex gap-1.5 h-2 w-full">
           {[0, 1, 2, 3].map((l) => {
             const c = LEVEL_COLORS[l as keyof typeof LEVEL_COLORS];
@@ -92,12 +123,12 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
           })}
         </div>
 
-        {/* Current level description */}
+        {/* Описание текущего уровня из массива levelDescriptions[currentLevel] */}
         <div className="text-xs text-muted-foreground/80 leading-relaxed bg-background/30 p-2.5 rounded-lg border border-border/30">
           {skill.levelDescriptions?.[skill.level]}
         </div>
 
-        {/* Expand/Collapse table */}
+        {/* Кнопка раскрытия детальной таблицы */}
         <Button
           variant="ghost"
           size="sm"
@@ -108,7 +139,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
           {expanded ? "Скрыть детали" : "Показать требования и рекомендации"}
         </Button>
 
-        {/* Details Table */}
+        {/* Детальная таблица: требования / артефакты / рекомендации для текущего уровня */}
         {expanded && (
           <div className="rounded-xl overflow-hidden border border-border/40 text-xs">
             <div className="grid grid-cols-3 bg-background/60">

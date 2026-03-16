@@ -1,3 +1,25 @@
+/**
+ * Страница дашборда команды.
+ *
+ * Получает данные команды по teamId через React Query хук useGetTeam.
+ * Ответ содержит: имя команды, описание, overallLevel, и массив skillLevels
+ * (каждый элемент = навык с его текущим уровнем и всеми метаданными уровней).
+ *
+ * Алгоритм группировки навыков по категориям:
+ *   skillLevels.reduce → объект { "Test Strategy": [...], "Test Design": [...], ... }
+ *   Используется reduce вместо groupBy для совместимости с TypeScript без дополнительных утилит.
+ *
+ * Структура страницы:
+ *   1. Шапка — название команды, описание, бейдж с общим уровнем зрелости
+ *   2. Аналитическая секция (2 блока в ряд):
+ *      - Radarchart (MaturityRadar) — визуализация уровней по 15 навыкам
+ *      - Current Posture — текстовое описание + сетка счётчиков по уровням (0..3)
+ *   3. Сетка навыков — по категориям, каждый навык = SkillCard
+ *
+ * Анимации: framer-motion animate-in при загрузке страницы и каждой категории
+ * (задержка i * 100ms создаёт эффект последовательного появления секций).
+ */
+
 import { useGetTeam } from "@workspace/api-client-react";
 import { MaturityRadar } from "@/components/MaturityRadar";
 import { SkillCard } from "@/components/SkillCard";
@@ -5,7 +27,7 @@ import { Loader2, Info } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-// Helper to style the overarching badge visually
+// Визуальная конфигурация для каждого уровня зрелости: метка и цветовая схема
 const getMaturityConfig = (level: number) => {
   switch (level) {
     case 0: return { label: "Level 0: Initial", color: "text-slate-400 border-slate-500/30 bg-slate-500/10 shadow-[0_0_15px_rgba(100,116,139,0.15)]" };
@@ -39,7 +61,7 @@ export function TeamDashboard({ teamId }: { teamId: number }) {
     );
   }
 
-  // Group skills by category for the grid
+  // Группируем навыки по категории для отображения по секциям
   const skillsByCategory = team.skillLevels.reduce((acc, skill) => {
     if (!acc[skill.skillCategory]) acc[skill.skillCategory] = [];
     acc[skill.skillCategory].push(skill);
@@ -51,7 +73,7 @@ export function TeamDashboard({ teamId }: { teamId: number }) {
   return (
     <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1400px] mx-auto pb-20">
       
-      {/* Header Section */}
+      {/* Шапка: название и бейдж общего уровня */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-10">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-foreground font-display mb-2 drop-shadow-sm">{team.name}</h1>
@@ -62,9 +84,9 @@ export function TeamDashboard({ teamId }: { teamId: number }) {
         </div>
       </div>
 
-      {/* Analytics Overview */}
+      {/* Аналитика: радар + статистика */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-12">
-        {/* Radar Chart */}
+        {/* Radar chart — визуализирует уровни по всем 15 навыкам */}
         <div className="xl:col-span-1 bg-card/40 border border-border/50 rounded-3xl p-5 shadow-sm backdrop-blur-md min-h-[380px] flex flex-col relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl" />
           <h3 className="font-display font-bold text-sm text-foreground/80 mb-2 px-2 uppercase tracking-widest flex items-center gap-2">
@@ -75,7 +97,7 @@ export function TeamDashboard({ teamId }: { teamId: number }) {
           </div>
         </div>
 
-        {/* Stats Summary */}
+        {/* Сводка: общий уровень + счётчики навыков по уровням */}
         <div className="xl:col-span-2 bg-card/40 border border-border/50 rounded-3xl p-8 shadow-sm backdrop-blur-md flex flex-col justify-center relative overflow-hidden">
           <div className="absolute bottom-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
           <h3 className="font-display font-bold text-2xl mb-3 text-foreground tracking-tight">Current Posture</h3>
@@ -84,6 +106,7 @@ export function TeamDashboard({ teamId }: { teamId: number }) {
             The overall level progresses when at least <strong>85%</strong> (13 out of 15) of skills meet or exceed the target level milestone.
           </p>
           
+          {/* Счётчики навыков по уровням: сколько навыков на каждом конкретном уровне */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
             {[0, 1, 2, 3].map(l => {
               const count = team.skillLevels.filter(s => s.level === l).length;
@@ -103,7 +126,7 @@ export function TeamDashboard({ teamId }: { teamId: number }) {
         </div>
       </div>
 
-      {/* Skills Grid by Category */}
+      {/* Сетка навыков сгруппированная по категориям */}
       <div className="space-y-12">
         {Object.entries(skillsByCategory).map(([category, skills], i) => (
           <motion.div 
