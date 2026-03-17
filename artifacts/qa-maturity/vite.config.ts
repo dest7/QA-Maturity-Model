@@ -62,6 +62,13 @@ export default defineConfig({
     port,
     host: "0.0.0.0",
     allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: 'http://api-server:8080',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, '/api')
+      }
+    },
     fs: {
       strict: true,
       deny: ["**/.*"],

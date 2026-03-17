@@ -47,3 +47,8 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+
+.env
+TODO.md
+TODO-docker-fix.md

@@ -1,0 +1,61 @@
+
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: qa_maturity
+      POSTGRES_USER: qa_user
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./lib/db/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qa_user -d qa_maturity"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    working_dir: /workspace
+    # No volume mount for dev (preserve node_modules)
+    ports:
+      - '8080:8080'
+    environment:
+      DATABASE_URL: 'postgresql://qa_user:postgres@postgres:5432/qa_maturity?schema=public'
+      PORT: '8080'
+      NODE_ENV: 'development'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  qa-maturity:
+    build: 
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - '5173:5173'
+
+    environment:
+      VITE_API_URL: http://localhost:8080
+      PORT: 5173
+      BASE_PATH: /
+
+
+    depends_on:
+      - api-server
+
+volumes:
+  postgres_data:
+

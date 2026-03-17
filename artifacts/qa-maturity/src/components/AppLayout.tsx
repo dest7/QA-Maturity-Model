@@ -102,7 +102,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     },
   });
 
-  const teamToDelete = teams?.find((t) => t.id === deleteConfirmId);
+const teamToDelete = Array.isArray(teams) ? teams.find((t) => t.id === deleteConfirmId) : undefined;
   const hasDeletedTeams = (deletedTeams?.length ?? 0) > 0;
 
   return (
@@ -128,16 +128,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <BarChart2 size={12} /> Active Teams
           </div>
 
-          {isLoading ? (
+{isLoading ? (
             <div className="flex justify-center p-6">
               <Loader2 className="w-6 h-6 animate-spin text-primary/40" />
             </div>
-          ) : teams?.length === 0 ? (
+          ) : !Array.isArray(teams) || teams.length === 0 ? (
             <div className="px-2 py-4 text-sm text-muted-foreground text-center">
               Нет активных команд.
             </div>
           ) : (
-            teams?.map((team) => {
+            teams.map((team) => {
               const isActive = match && params?.id === String(team.id);
               return (
                 <div key={team.id} className="relative group/row">

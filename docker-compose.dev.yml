@@ -1,0 +1,12 @@
+services:
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@qa-maturity.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - '8081:80'
+    depends_on:
+      - postgres
+
