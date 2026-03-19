@@ -2,20 +2,21 @@ FROM node:20-slim
 
 RUN apt-get update && apt-get install -y git python3 make g++ build-essential && rm -rf /var/lib/apt/lists/*
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Pin pnpm to v9 — compatible with lockfileVersion '9.0'
+RUN corepack enable && corepack prepare pnpm@9 --activate
 
 WORKDIR /workspace
 
-COPY pnpm-lock.yaml pnpm-workspace.yaml package*.json ./
+COPY . .
+
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
-COPY . .
-ENV PORT=5173 VITE_API_URL=http://localhost:8080 BASE_PATH=/
-
-RUN pnpm install --frozen-lockfile
+# Rebuild native modules for the container platform
 RUN pnpm rebuild
+
+ENV PORT=5173 VITE_API_URL=http://localhost:8080 BASE_PATH=/
 
 EXPOSE 5173
 
-CMD cd /workspace/artifacts/qa-maturity && pnpm dev --host 0.0.0.0
+CMD ["pnpm", "--filter", "@workspace/qa-maturity", "run", "dev"]
 

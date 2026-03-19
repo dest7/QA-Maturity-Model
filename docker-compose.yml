@@ -20,12 +20,11 @@ services:
       retries: 10
 
   api-server:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile.api
     restart: unless-stopped
-    working_dir: /workspace
-    # No volume mount for dev (preserve node_modules)
+    # No volume mount — preserves node_modules built inside the image
     ports:
       - '8080:8080'
     environment:
@@ -37,24 +36,20 @@ services:
         condition: service_healthy
 
   qa-maturity:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile.web
     restart: unless-stopped
-    working_dir: /app
-    volumes:
-      - .:/app
+    # No volume mount — preserves node_modules built inside the image
     ports:
       - '5173:5173'
-
     environment:
       VITE_API_URL: http://localhost:8080
       PORT: 5173
       BASE_PATH: /
-
-
     depends_on:
-      - api-server
+      api-server:
+        condition: service_started
 
 volumes:
   postgres_data:
