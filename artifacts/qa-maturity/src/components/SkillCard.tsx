@@ -3,37 +3,38 @@
  *
  * Отображает один QA-навык с его текущим уровнем и позволяет изменять его.
  *
- * Взаимодействие с сервером:
- *   При нажатии + или − вызывается хук useUpdateSkillLevel (PUT /api/teams/:id/skills/:skillId).
- *   После успешного ответа инвалидируются два React Query кэша:
- *     - getGetTeamQueryKey(teamId)  — чтобы обновился overallLevel и radar chart
- *     - getGetTeamsQueryKey()       — чтобы обновился бейдж Lx в сайдбаре
- *   Во время запроса (isPending) кнопки заблокированы, цифра заменяется спиннером.
+ * Роль (useRole):
+ *   reviewer — видит кнопки +/−, форму добавления артефактов, кнопку удаления артефактов.
+ *   viewer   — видит только информацию без элементов редактирования.
  *
- * Визуальная система уровней (LEVEL_COLORS):
- *   0 — серый    (slate)   — Initial
- *   1 — жёлтый   (amber)   — Developing
- *   2 — синий    (blue)    — Defined
- *   3 — зелёный  (emerald) — Optimized
+ * Кнопка «i»:
+ *   Открывает SkillInfoModal — полную таблицу всех 4 уровней навыка.
  *
- * Сегментированный прогресс-бар:
- *   4 сегмента (по одному на уровень). Сегменты с индексом <= currentLevel подсвечиваются
- *   цветом соответствующего уровня с glow-эффектом (box-shadow).
- *
- * Таблица деталей (раскрываемая):
- *   Показывает данные для ТЕКУЩЕГО уровня навыка из массивов levelRequirements/Artifacts/Recommendations.
- *   Третья колонка — "Рекомендации к следующему уровню", если уровень < 3, иначе "Практики поддержания".
+ * Артефакты:
+ *   Загружаются через useGetArtifacts при раскрытии карточки.
+ *   Reviewer может добавлять и удалять артефакты.
+ *   Артефакт с ссылкой рендерится как кликабельная метка.
  */
 
-import { useUpdateSkillLevel, getGetTeamQueryKey, getGetTeamsQueryKey } from "@workspace/api-client-react";
+import {
+  useUpdateSkillLevel,
+  useGetArtifacts,
+  useCreateArtifact,
+  useDeleteArtifact,
+  getGetTeamQueryKey,
+  getGetTeamsQueryKey,
+  getGetArtifactsQueryKey,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Minus, Plus, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { Minus, Plus, Loader2, ChevronDown, ChevronUp, Info, Link2, Trash2, PlusCircle, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { SkillInfoModal } from "@/components/SkillInfoModal";
+import { useRole } from "@/contexts/RoleContext";
 
-// Цветовая система уровней: цвет полоски прогресса, свечения, текста и бейджа
 const LEVEL_COLORS = {
   0: { bar: "bg-slate-500", glow: "shadow-[0_0_8px_rgba(100,116,139,0.5)]", text: "text-slate-400", badge: "bg-slate-500/10 text-slate-300 border-slate-500/30" },
   1: { bar: "bg-amber-500", glow: "shadow-[0_0_8px_rgba(245,158,11,0.5)]", text: "text-amber-500", badge: "bg-amber-500/10 text-amber-300 border-amber-500/30" },
@@ -45,128 +46,302 @@ const LEVEL_LABELS = ["Initial", "Developing", "Defined", "Optimized"];
 
 export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
   const queryClient = useQueryClient();
+  const { isReviewer } = useRole();
   const [expanded, setExpanded] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [newArtifactName, setNewArtifactName] = useState("");
+  const [newArtifactLink, setNewArtifactLink] = useState("");
+  const [showArtifactForm, setShowArtifactForm] = useState(false);
 
-  const { mutate, isPending } = useUpdateSkillLevel({
+  const { mutate: updateLevel, isPending } = useUpdateSkillLevel({
     mutation: {
       onSuccess: () => {
-        // Инвалидируем оба кэша, чтобы данные обновились везде на странице
         queryClient.invalidateQueries({ queryKey: getGetTeamQueryKey(teamId) });
         queryClient.invalidateQueries({ queryKey: getGetTeamsQueryKey() });
       },
     },
   });
 
+  const { data: artifacts, isLoading: artifactsLoading } = useGetArtifacts(
+    teamId,
+    skill.skillId,
+    { query: { enabled: expanded } }
+  );
+
+  const { mutate: createArtifact, isPending: isCreating } = useCreateArtifact({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetArtifactsQueryKey(teamId, skill.skillId) });
+        setNewArtifactName("");
+        setNewArtifactLink("");
+        setShowArtifactForm(false);
+      },
+    },
+  });
+
+  const { mutate: deleteArtifact, isPending: isDeleting } = useDeleteArtifact({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetArtifactsQueryKey(teamId, skill.skillId) });
+      },
+    },
+  });
+
   const handleUpdate = (newLevel: number) => {
-    // Защита от выхода за границы (0–3) и от двойного клика во время запроса
-    if (newLevel < 0 || newLevel > 3 || isPending) return;
-    mutate({ teamId, skillId: skill.skillId, data: { level: newLevel } });
+    if (newLevel < 0 || newLevel > 3 || isPending || !isReviewer) return;
+    updateLevel({ teamId, skillId: skill.skillId, data: { level: newLevel } });
+  };
+
+  const handleAddArtifact = () => {
+    if (!newArtifactName.trim()) return;
+    createArtifact({
+      teamId,
+      skillId: skill.skillId,
+      data: { name: newArtifactName.trim(), link: newArtifactLink.trim() || null },
+    });
   };
 
   const colors = LEVEL_COLORS[skill.level as keyof typeof LEVEL_COLORS];
   const hasNextLevel = skill.level < 3;
 
   return (
-    <Card className="group border-border/40 hover:border-primary/40 bg-card/30 hover:bg-card/60 backdrop-blur-sm transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-primary/5 flex flex-col">
-      <CardHeader className="p-5 pb-3">
-        <div className="flex justify-between items-start gap-4">
-          <div className="flex-1 min-w-0">
-            <CardTitle className="text-base font-semibold tracking-tight text-foreground/90 group-hover:text-primary transition-colors leading-tight mb-1">
-              {skill.skillName}
-            </CardTitle>
-            <span className={cn("inline-flex items-center text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border", colors.badge)}>
-              {LEVEL_LABELS[skill.level]}
-            </span>
-          </div>
-          {/* Контрол изменения уровня: − [цифра] + */}
-          <div className="flex items-center shrink-0 bg-background/90 rounded-lg p-0.5 border border-border/50 shadow-inner">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md hover:bg-destructive/20 hover:text-destructive text-muted-foreground disabled:opacity-30"
-              onClick={() => handleUpdate(skill.level - 1)}
-              disabled={skill.level === 0 || isPending}
-            >
-              <Minus className="h-3.5 w-3.5" />
-            </Button>
-            <div className="w-6 text-center text-xs font-bold font-mono text-foreground">
-              {isPending ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : skill.level}
+    <>
+      <Card className="group border-border/40 hover:border-primary/40 bg-card/30 hover:bg-card/60 backdrop-blur-sm transition-all duration-300 shadow-sm hover:shadow-lg hover:shadow-primary/5 flex flex-col">
+        <CardHeader className="p-5 pb-3">
+          <div className="flex justify-between items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 mb-1">
+                <CardTitle className="text-base font-semibold tracking-tight text-foreground/90 group-hover:text-primary transition-colors leading-tight">
+                  {skill.skillName}
+                </CardTitle>
+                {/* Кнопка «i» — открывает полное описание всех уровней навыка */}
+                <button
+                  onClick={() => setInfoOpen(true)}
+                  title="Подробное описание уровней"
+                  className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-muted-foreground/40 hover:text-primary hover:bg-primary/10 transition-all"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <span className={cn("inline-flex items-center text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border", colors.badge)}>
+                {LEVEL_LABELS[skill.level]}
+              </span>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md hover:bg-emerald-500/20 hover:text-emerald-500 text-muted-foreground disabled:opacity-30"
-              onClick={() => handleUpdate(skill.level + 1)}
-              disabled={skill.level === 3 || isPending}
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
 
-      <CardContent className="p-5 pt-0 flex flex-col gap-3 flex-1">
-        {/* Сегментированный прогресс-бар: 4 сегмента, активны те, что <= currentLevel */}
-        <div className="flex gap-1.5 h-2 w-full">
-          {[0, 1, 2, 3].map((l) => {
-            const c = LEVEL_COLORS[l as keyof typeof LEVEL_COLORS];
-            const active = l <= skill.level;
-            return (
-              <div
-                key={l}
-                className={cn(
-                  "flex-1 rounded-full transition-all duration-500 ease-out",
-                  active ? `${c.bar} ${c.glow}` : "bg-secondary opacity-40"
+            {/* Контрол изменения уровня — только для reviewer */}
+            {isReviewer ? (
+              <div className="flex items-center shrink-0 bg-background/90 rounded-lg p-0.5 border border-border/50 shadow-inner">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 rounded-md hover:bg-destructive/20 hover:text-destructive text-muted-foreground disabled:opacity-30"
+                  onClick={() => handleUpdate(skill.level - 1)}
+                  disabled={skill.level === 0 || isPending}
+                >
+                  <Minus className="h-3.5 w-3.5" />
+                </Button>
+                <div className="w-6 text-center text-xs font-bold font-mono text-foreground">
+                  {isPending ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : skill.level}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 rounded-md hover:bg-emerald-500/20 hover:text-emerald-500 text-muted-foreground disabled:opacity-30"
+                  onClick={() => handleUpdate(skill.level + 1)}
+                  disabled={skill.level === 3 || isPending}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ) : (
+              // Viewer: просто цифра уровня без кнопок
+              <div className={cn("shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black font-mono border", colors.badge)}>
+                {skill.level}
+              </div>
+            )}
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-5 pt-0 flex flex-col gap-3 flex-1">
+          {/* Сегментированный прогресс-бар */}
+          <div className="flex gap-1.5 h-2 w-full">
+            {[0, 1, 2, 3].map((l) => {
+              const c = LEVEL_COLORS[l as keyof typeof LEVEL_COLORS];
+              return (
+                <div
+                  key={l}
+                  className={cn(
+                    "flex-1 rounded-full transition-all duration-500 ease-out",
+                    l <= skill.level ? `${c.bar} ${c.glow}` : "bg-secondary opacity-40"
+                  )}
+                />
+              );
+            })}
+          </div>
+
+          {/* Описание текущего уровня */}
+          <div className="text-xs text-muted-foreground/80 leading-relaxed bg-background/30 p-2.5 rounded-lg border border-border/30">
+            {skill.levelDescriptions?.[skill.level]}
+          </div>
+
+          {/* Кнопка раскрытия */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full h-7 text-xs text-muted-foreground/60 hover:text-primary hover:bg-primary/5 gap-1.5 border border-border/20 rounded-lg"
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            {expanded ? "Скрыть детали" : "Показать требования и артефакты"}
+          </Button>
+
+          {/* Детальная секция */}
+          {expanded && (
+            <div className="flex flex-col gap-3">
+              {/* Таблица требований / артефактов / рекомендаций */}
+              <div className="rounded-xl overflow-hidden border border-border/40 text-xs">
+                <div className="grid grid-cols-3 bg-background/60">
+                  <div className="px-3 py-2 font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px] border-b border-border/30 border-r border-border/30">
+                    Требования к уровню {skill.level}
+                  </div>
+                  <div className="px-3 py-2 font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px] border-b border-border/30 border-r border-border/30">
+                    Артефакты подтверждения
+                  </div>
+                  <div className="px-3 py-2 font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px] border-b border-border/30">
+                    {hasNextLevel ? `Рекомендации к уровню ${skill.level + 1}` : "Практики поддержания"}
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 bg-card/20">
+                  <div className="px-3 py-3 text-foreground/75 leading-relaxed border-r border-border/30">
+                    {skill.levelRequirements?.[skill.level] || "—"}
+                  </div>
+                  <div className="px-3 py-3 text-foreground/75 leading-relaxed border-r border-border/30">
+                    {skill.levelArtifacts?.[skill.level] || "—"}
+                  </div>
+                  <div className={cn("px-3 py-3 leading-relaxed", hasNextLevel ? "text-primary/80" : "text-emerald-400/80")}>
+                    {skill.levelRecommendations?.[skill.level] || "—"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Секция прикреплённых артефактов команды */}
+              <div className="rounded-xl border border-border/40 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 bg-background/60 border-b border-border/30">
+                  <span className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider flex items-center gap-1.5">
+                    <FileText className="w-3 h-3" />
+                    Прикреплённые артефакты команды
+                  </span>
+                  {isReviewer && !showArtifactForm && (
+                    <button
+                      onClick={() => setShowArtifactForm(true)}
+                      className="flex items-center gap-1 text-[10px] font-semibold text-primary/70 hover:text-primary transition-colors"
+                    >
+                      <PlusCircle className="w-3 h-3" />
+                      Добавить
+                    </button>
+                  )}
+                </div>
+
+                {/* Форма добавления артефакта */}
+                {isReviewer && showArtifactForm && (
+                  <div className="p-3 bg-background/40 border-b border-border/30 flex flex-col gap-2">
+                    <Input
+                      placeholder="Название артефакта *"
+                      value={newArtifactName}
+                      onChange={(e) => setNewArtifactName(e.target.value)}
+                      className="h-7 text-xs bg-background/60 border-border/50"
+                    />
+                    <Input
+                      placeholder="Ссылка (необязательно)"
+                      value={newArtifactLink}
+                      onChange={(e) => setNewArtifactLink(e.target.value)}
+                      className="h-7 text-xs bg-background/60 border-border/50"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs flex-1"
+                        onClick={handleAddArtifact}
+                        disabled={!newArtifactName.trim() || isCreating}
+                      >
+                        {isCreating ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                        Сохранить
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        onClick={() => { setShowArtifactForm(false); setNewArtifactName(""); setNewArtifactLink(""); }}
+                      >
+                        Отмена
+                      </Button>
+                    </div>
+                  </div>
                 )}
-              />
-            );
-          })}
-        </div>
 
-        {/* Описание текущего уровня из массива levelDescriptions[currentLevel] */}
-        <div className="text-xs text-muted-foreground/80 leading-relaxed bg-background/30 p-2.5 rounded-lg border border-border/30">
-          {skill.levelDescriptions?.[skill.level]}
-        </div>
-
-        {/* Кнопка раскрытия детальной таблицы */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full h-7 text-xs text-muted-foreground/60 hover:text-primary hover:bg-primary/5 gap-1.5 border border-border/20 rounded-lg"
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-          {expanded ? "Скрыть детали" : "Показать требования и рекомендации"}
-        </Button>
-
-        {/* Детальная таблица: требования / артефакты / рекомендации для текущего уровня */}
-        {expanded && (
-          <div className="rounded-xl overflow-hidden border border-border/40 text-xs">
-            <div className="grid grid-cols-3 bg-background/60">
-              <div className="px-3 py-2 font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px] border-b border-border/30 border-r border-border/30">
-                Требования к уровню {skill.level}
-              </div>
-              <div className="px-3 py-2 font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px] border-b border-border/30 border-r border-border/30">
-                Артефакты подтверждения
-              </div>
-              <div className="px-3 py-2 font-semibold text-muted-foreground/70 uppercase tracking-wider text-[10px] border-b border-border/30">
-                {hasNextLevel ? `Рекомендации к уровню ${skill.level + 1}` : "Практики поддержания"}
+                {/* Список артефактов */}
+                <div className="p-3 flex flex-col gap-2 bg-card/20 min-h-[48px]">
+                  {artifactsLoading ? (
+                    <div className="flex justify-center py-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/40" />
+                    </div>
+                  ) : !artifacts || artifacts.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground/40 text-center py-1 italic">
+                      Артефакты не прикреплены
+                    </p>
+                  ) : (
+                    artifacts.map((artifact) => (
+                      <div
+                        key={artifact.id}
+                        className="flex items-center gap-2 group/art"
+                      >
+                        <div className="flex-1 min-w-0">
+                          {artifact.link ? (
+                            <a
+                              href={artifact.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-xs text-primary/80 hover:text-primary transition-colors truncate"
+                            >
+                              <Link2 className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{artifact.name}</span>
+                            </a>
+                          ) : (
+                            <span className="flex items-center gap-1.5 text-xs text-foreground/70 truncate">
+                              <FileText className="w-3 h-3 shrink-0 text-muted-foreground/50" />
+                              <span className="truncate">{artifact.name}</span>
+                            </span>
+                          )}
+                          {artifact.note && (
+                            <p className="text-[10px] text-muted-foreground/50 mt-0.5 truncate pl-4">{artifact.note}</p>
+                          )}
+                        </div>
+                        {isReviewer && (
+                          <button
+                            onClick={() => deleteArtifact({ teamId, skillId: skill.skillId, artifactId: artifact.id })}
+                            disabled={isDeleting}
+                            className="shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover/art:opacity-100 transition-all"
+                            title="Удалить артефакт"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
-            <div className="grid grid-cols-3 bg-card/20">
-              <div className="px-3 py-3 text-foreground/75 leading-relaxed border-r border-border/30">
-                {skill.levelRequirements?.[skill.level] || "—"}
-              </div>
-              <div className="px-3 py-3 text-foreground/75 leading-relaxed border-r border-border/30">
-                {skill.levelArtifacts?.[skill.level] || "—"}
-              </div>
-              <div className={cn("px-3 py-3 leading-relaxed", hasNextLevel ? "text-primary/80" : "text-emerald-400/80")}>
-                {skill.levelRecommendations?.[skill.level] || "—"}
-              </div>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Модальное окно с полным описанием всех уровней навыка */}
+      <SkillInfoModal
+        open={infoOpen}
+        onOpenChange={setInfoOpen}
+        skill={skill}
+      />
+    </>
   );
 }

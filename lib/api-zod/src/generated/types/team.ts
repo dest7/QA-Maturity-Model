@@ -5,12 +5,15 @@
  * QA Maturity Model API
  * OpenAPI spec version: 0.1.0
  */
+import type { TeamAssessmentStatus } from "./teamAssessmentStatus";
 
 export interface Team {
   id: number;
   name: string;
   description: string;
   overallLevel: number;
+  assessmentStatus: TeamAssessmentStatus;
+  lastAssessedAt?: Date | null;
   createdAt: Date;
   deletedAt?: Date | null;
 }

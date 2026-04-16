@@ -5,6 +5,7 @@
  * QA Maturity Model API
  * OpenAPI spec version: 0.1.0
  */
+import type { TeamDetailAssessmentStatus } from "./teamDetailAssessmentStatus";
 import type { TeamSkillWithInfo } from "./teamSkillWithInfo";
 
 export interface TeamDetail {
@@ -12,6 +13,8 @@ export interface TeamDetail {
   name: string;
   description: string;
   overallLevel: number;
+  assessmentStatus: TeamDetailAssessmentStatus;
+  lastAssessedAt?: Date | null;
   createdAt: Date;
   skillLevels: TeamSkillWithInfo[];
 }

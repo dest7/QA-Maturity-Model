@@ -17,6 +17,8 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  Artifact,
+  CreateArtifactRequest,
   CreateTeamRequest,
   ErrorResponse,
   HealthStatus,
@@ -27,6 +29,7 @@ import type {
   TeamSkillLevel,
   UpdateSkillLevelRequest,
   UpdateTeamRequest,
+  UpdateTeamStatusRequest,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -673,6 +676,93 @@ export const useRestoreTeam = <
 };
 
 /**
+ * @summary Update assessment status of a team
+ */
+export const getUpdateTeamStatusUrl = (teamId: number) => {
+  return `/api/teams/${teamId}/status`;
+};
+
+export const updateTeamStatus = async (
+  teamId: number,
+  updateTeamStatusRequest: UpdateTeamStatusRequest,
+  options?: RequestInit,
+): Promise<Team> => {
+  return customFetch<Team>(getUpdateTeamStatusUrl(teamId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateTeamStatusRequest),
+  });
+};
+
+export const getUpdateTeamStatusMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTeamStatus>>,
+    TError,
+    { teamId: number; data: BodyType<UpdateTeamStatusRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateTeamStatus>>,
+  TError,
+  { teamId: number; data: BodyType<UpdateTeamStatusRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateTeamStatus"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateTeamStatus>>,
+    { teamId: number; data: BodyType<UpdateTeamStatusRequest> }
+  > = (props) => {
+    const { teamId, data } = props ?? {};
+
+    return updateTeamStatus(teamId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTeamStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateTeamStatus>>
+>;
+export type UpdateTeamStatusMutationBody = BodyType<UpdateTeamStatusRequest>;
+export type UpdateTeamStatusMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Update assessment status of a team
+ */
+export const useUpdateTeamStatus = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTeamStatus>>,
+    TError,
+    { teamId: number; data: BodyType<UpdateTeamStatusRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateTeamStatus>>,
+  TError,
+  { teamId: number; data: BodyType<UpdateTeamStatusRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateTeamStatusMutationOptions(options));
+};
+
+/**
  * @summary Update skill level for a team
  */
 export const getUpdateSkillLevelUrl = (teamId: number, skillId: number) => {
@@ -766,6 +856,278 @@ export const useUpdateSkillLevel = <
   TContext
 > => {
   return useMutation(getUpdateSkillLevelMutationOptions(options));
+};
+
+/**
+ * @summary Get artifacts for a team skill
+ */
+export const getGetArtifactsUrl = (teamId: number, skillId: number) => {
+  return `/api/teams/${teamId}/skills/${skillId}/artifacts`;
+};
+
+export const getArtifacts = async (
+  teamId: number,
+  skillId: number,
+  options?: RequestInit,
+): Promise<Artifact[]> => {
+  return customFetch<Artifact[]>(getGetArtifactsUrl(teamId, skillId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetArtifactsQueryKey = (teamId: number, skillId: number) => {
+  return [`/api/teams/${teamId}/skills/${skillId}/artifacts`] as const;
+};
+
+export const getGetArtifactsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getArtifacts>>,
+  TError = ErrorType<unknown>,
+>(
+  teamId: number,
+  skillId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getArtifacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetArtifactsQueryKey(teamId, skillId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getArtifacts>>> = ({
+    signal,
+  }) => getArtifacts(teamId, skillId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(teamId && skillId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getArtifacts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetArtifactsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getArtifacts>>
+>;
+export type GetArtifactsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get artifacts for a team skill
+ */
+
+export function useGetArtifacts<
+  TData = Awaited<ReturnType<typeof getArtifacts>>,
+  TError = ErrorType<unknown>,
+>(
+  teamId: number,
+  skillId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getArtifacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetArtifactsQueryOptions(teamId, skillId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add artifact to a team skill
+ */
+export const getCreateArtifactUrl = (teamId: number, skillId: number) => {
+  return `/api/teams/${teamId}/skills/${skillId}/artifacts`;
+};
+
+export const createArtifact = async (
+  teamId: number,
+  skillId: number,
+  createArtifactRequest: CreateArtifactRequest,
+  options?: RequestInit,
+): Promise<Artifact> => {
+  return customFetch<Artifact>(getCreateArtifactUrl(teamId, skillId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createArtifactRequest),
+  });
+};
+
+export const getCreateArtifactMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createArtifact>>,
+    TError,
+    { teamId: number; skillId: number; data: BodyType<CreateArtifactRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createArtifact>>,
+  TError,
+  { teamId: number; skillId: number; data: BodyType<CreateArtifactRequest> },
+  TContext
+> => {
+  const mutationKey = ["createArtifact"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createArtifact>>,
+    { teamId: number; skillId: number; data: BodyType<CreateArtifactRequest> }
+  > = (props) => {
+    const { teamId, skillId, data } = props ?? {};
+
+    return createArtifact(teamId, skillId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateArtifactMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createArtifact>>
+>;
+export type CreateArtifactMutationBody = BodyType<CreateArtifactRequest>;
+export type CreateArtifactMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add artifact to a team skill
+ */
+export const useCreateArtifact = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createArtifact>>,
+    TError,
+    { teamId: number; skillId: number; data: BodyType<CreateArtifactRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createArtifact>>,
+  TError,
+  { teamId: number; skillId: number; data: BodyType<CreateArtifactRequest> },
+  TContext
+> => {
+  return useMutation(getCreateArtifactMutationOptions(options));
+};
+
+/**
+ * @summary Delete an artifact
+ */
+export const getDeleteArtifactUrl = (
+  teamId: number,
+  skillId: number,
+  artifactId: number,
+) => {
+  return `/api/teams/${teamId}/skills/${skillId}/artifacts/${artifactId}`;
+};
+
+export const deleteArtifact = async (
+  teamId: number,
+  skillId: number,
+  artifactId: number,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
+    getDeleteArtifactUrl(teamId, skillId, artifactId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeleteArtifactMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteArtifact>>,
+    TError,
+    { teamId: number; skillId: number; artifactId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteArtifact>>,
+  TError,
+  { teamId: number; skillId: number; artifactId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteArtifact"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteArtifact>>,
+    { teamId: number; skillId: number; artifactId: number }
+  > = (props) => {
+    const { teamId, skillId, artifactId } = props ?? {};
+
+    return deleteArtifact(teamId, skillId, artifactId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteArtifactMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteArtifact>>
+>;
+
+export type DeleteArtifactMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Delete an artifact
+ */
+export const useDeleteArtifact = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteArtifact>>,
+    TError,
+    { teamId: number; skillId: number; artifactId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteArtifact>>,
+  TError,
+  { teamId: number; skillId: number; artifactId: number },
+  TContext
+> => {
+  return useMutation(getDeleteArtifactMutationOptions(options));
 };
 
 /**

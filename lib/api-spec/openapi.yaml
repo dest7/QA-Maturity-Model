@@ -13,6 +13,8 @@ tags:
     description: Team operations
   - name: skills
     description: Skill operations
+  - name: artifacts
+    description: Team skill artifact operations
 paths:
   /healthz:
     get:
@@ -166,6 +168,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /teams/{teamId}/status:
+    patch:
+      operationId: updateTeamStatus
+      tags: [teams]
+      summary: Update assessment status of a team
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTeamStatusRequest"
+      responses:
+        "200":
+          description: Updated team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+        "404":
+          description: Team not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /teams/{teamId}/skills/{skillId}:
     put:
       operationId: updateSkillLevel
@@ -195,6 +227,93 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TeamSkillLevel"
+  /teams/{teamId}/skills/{skillId}/artifacts:
+    get:
+      operationId: getArtifacts
+      tags: [artifacts]
+      summary: Get artifacts for a team skill
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: skillId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of artifacts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Artifact"
+    post:
+      operationId: createArtifact
+      tags: [artifacts]
+      summary: Add artifact to a team skill
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: skillId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateArtifactRequest"
+      responses:
+        "201":
+          description: Created artifact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Artifact"
+  /teams/{teamId}/skills/{skillId}/artifacts/{artifactId}:
+    delete:
+      operationId: deleteArtifact
+      tags: [artifacts]
+      summary: Delete an artifact
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: skillId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: artifactId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Artifact not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /skills:
     get:
       operationId: getSkills
@@ -265,6 +384,13 @@ components:
           type: string
         overallLevel:
           type: integer
+        assessmentStatus:
+          type: string
+          enum: [planned, in_progress, completed, on_hold]
+        lastAssessedAt:
+          type: string
+          format: date-time
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -277,6 +403,7 @@ components:
         - name
         - description
         - overallLevel
+        - assessmentStatus
         - createdAt
     TeamSkillLevel:
       type: object
@@ -302,6 +429,13 @@ components:
           type: string
         overallLevel:
           type: integer
+        assessmentStatus:
+          type: string
+          enum: [planned, in_progress, completed, on_hold]
+        lastAssessedAt:
+          type: string
+          format: date-time
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -314,6 +448,7 @@ components:
         - name
         - description
         - overallLevel
+        - assessmentStatus
         - createdAt
         - skillLevels
     TeamSkillWithInfo:
@@ -355,6 +490,32 @@ components:
         - levelArtifacts
         - levelRecommendations
         - level
+    Artifact:
+      type: object
+      properties:
+        id:
+          type: integer
+        teamId:
+          type: integer
+        skillId:
+          type: integer
+        name:
+          type: string
+        link:
+          type: string
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - teamId
+        - skillId
+        - name
+        - createdAt
     CreateTeamRequest:
       type: object
       properties:
@@ -375,6 +536,14 @@ components:
       required:
         - name
         - description
+    UpdateTeamStatusRequest:
+      type: object
+      properties:
+        assessmentStatus:
+          type: string
+          enum: [planned, in_progress, completed, on_hold]
+      required:
+        - assessmentStatus
     UpdateSkillLevelRequest:
       type: object
       properties:
@@ -384,6 +553,19 @@ components:
           maximum: 3
       required:
         - level
+    CreateArtifactRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        link:
+          type: string
+          nullable: true
+        note:
+          type: string
+          nullable: true
+      required:
+        - name
     ErrorResponse:
       type: object
       properties:

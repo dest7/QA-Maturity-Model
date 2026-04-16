@@ -20,11 +20,23 @@ export interface Skill {
   levelRecommendations: string[];
 }
 
+export type TeamAssessmentStatus =
+  (typeof TeamAssessmentStatus)[keyof typeof TeamAssessmentStatus];
+
+export const TeamAssessmentStatus = {
+  planned: "planned",
+  in_progress: "in_progress",
+  completed: "completed",
+  on_hold: "on_hold",
+} as const;
+
 export interface Team {
   id: number;
   name: string;
   description: string;
   overallLevel: number;
+  assessmentStatus: TeamAssessmentStatus;
+  lastAssessedAt?: string | null;
   createdAt: string;
   deletedAt?: string | null;
 }
@@ -34,6 +46,16 @@ export interface TeamSkillLevel {
   skillId: number;
   level: number;
 }
+
+export type TeamDetailAssessmentStatus =
+  (typeof TeamDetailAssessmentStatus)[keyof typeof TeamDetailAssessmentStatus];
+
+export const TeamDetailAssessmentStatus = {
+  planned: "planned",
+  in_progress: "in_progress",
+  completed: "completed",
+  on_hold: "on_hold",
+} as const;
 
 export interface TeamSkillWithInfo {
   skillId: number;
@@ -52,8 +74,20 @@ export interface TeamDetail {
   name: string;
   description: string;
   overallLevel: number;
+  assessmentStatus: TeamDetailAssessmentStatus;
+  lastAssessedAt?: string | null;
   createdAt: string;
   skillLevels: TeamSkillWithInfo[];
+}
+
+export interface Artifact {
+  id: number;
+  teamId: number;
+  skillId: number;
+  name: string;
+  link?: string | null;
+  note?: string | null;
+  createdAt: string;
 }
 
 export interface CreateTeamRequest {
@@ -66,12 +100,32 @@ export interface UpdateTeamRequest {
   description: string;
 }
 
+export type UpdateTeamStatusRequestAssessmentStatus =
+  (typeof UpdateTeamStatusRequestAssessmentStatus)[keyof typeof UpdateTeamStatusRequestAssessmentStatus];
+
+export const UpdateTeamStatusRequestAssessmentStatus = {
+  planned: "planned",
+  in_progress: "in_progress",
+  completed: "completed",
+  on_hold: "on_hold",
+} as const;
+
+export interface UpdateTeamStatusRequest {
+  assessmentStatus: UpdateTeamStatusRequestAssessmentStatus;
+}
+
 export interface UpdateSkillLevelRequest {
   /**
    * @minimum 0
    * @maximum 3
    */
   level: number;
+}
+
+export interface CreateArtifactRequest {
+  name: string;
+  link?: string | null;
+  note?: string | null;
 }
 
 export interface ErrorResponse {

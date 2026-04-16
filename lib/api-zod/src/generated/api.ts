@@ -23,6 +23,13 @@ export const GetTeamsResponseItem = zod.object({
   name: zod.string(),
   description: zod.string(),
   overallLevel: zod.number(),
+  assessmentStatus: zod.enum([
+    "planned",
+    "in_progress",
+    "completed",
+    "on_hold",
+  ]),
+  lastAssessedAt: zod.date().nullish(),
   createdAt: zod.date(),
   deletedAt: zod.date().nullish(),
 });
@@ -44,6 +51,13 @@ export const GetDeletedTeamsResponseItem = zod.object({
   name: zod.string(),
   description: zod.string(),
   overallLevel: zod.number(),
+  assessmentStatus: zod.enum([
+    "planned",
+    "in_progress",
+    "completed",
+    "on_hold",
+  ]),
+  lastAssessedAt: zod.date().nullish(),
   createdAt: zod.date(),
   deletedAt: zod.date().nullish(),
 });
@@ -61,6 +75,13 @@ export const GetTeamResponse = zod.object({
   name: zod.string(),
   description: zod.string(),
   overallLevel: zod.number(),
+  assessmentStatus: zod.enum([
+    "planned",
+    "in_progress",
+    "completed",
+    "on_hold",
+  ]),
+  lastAssessedAt: zod.date().nullish(),
   createdAt: zod.date(),
   skillLevels: zod.array(
     zod.object({
@@ -94,6 +115,13 @@ export const UpdateTeamResponse = zod.object({
   name: zod.string(),
   description: zod.string(),
   overallLevel: zod.number(),
+  assessmentStatus: zod.enum([
+    "planned",
+    "in_progress",
+    "completed",
+    "on_hold",
+  ]),
+  lastAssessedAt: zod.date().nullish(),
   createdAt: zod.date(),
   deletedAt: zod.date().nullish(),
 });
@@ -121,6 +149,45 @@ export const RestoreTeamResponse = zod.object({
   name: zod.string(),
   description: zod.string(),
   overallLevel: zod.number(),
+  assessmentStatus: zod.enum([
+    "planned",
+    "in_progress",
+    "completed",
+    "on_hold",
+  ]),
+  lastAssessedAt: zod.date().nullish(),
+  createdAt: zod.date(),
+  deletedAt: zod.date().nullish(),
+});
+
+/**
+ * @summary Update assessment status of a team
+ */
+export const UpdateTeamStatusParams = zod.object({
+  teamId: zod.coerce.number(),
+});
+
+export const UpdateTeamStatusBody = zod.object({
+  assessmentStatus: zod.enum([
+    "planned",
+    "in_progress",
+    "completed",
+    "on_hold",
+  ]),
+});
+
+export const UpdateTeamStatusResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string(),
+  overallLevel: zod.number(),
+  assessmentStatus: zod.enum([
+    "planned",
+    "in_progress",
+    "completed",
+    "on_hold",
+  ]),
+  lastAssessedAt: zod.date().nullish(),
   createdAt: zod.date(),
   deletedAt: zod.date().nullish(),
 });
@@ -147,6 +214,52 @@ export const UpdateSkillLevelResponse = zod.object({
   teamId: zod.number(),
   skillId: zod.number(),
   level: zod.number(),
+});
+
+/**
+ * @summary Get artifacts for a team skill
+ */
+export const GetArtifactsParams = zod.object({
+  teamId: zod.coerce.number(),
+  skillId: zod.coerce.number(),
+});
+
+export const GetArtifactsResponseItem = zod.object({
+  id: zod.number(),
+  teamId: zod.number(),
+  skillId: zod.number(),
+  name: zod.string(),
+  link: zod.string().nullish(),
+  note: zod.string().nullish(),
+  createdAt: zod.date(),
+});
+export const GetArtifactsResponse = zod.array(GetArtifactsResponseItem);
+
+/**
+ * @summary Add artifact to a team skill
+ */
+export const CreateArtifactParams = zod.object({
+  teamId: zod.coerce.number(),
+  skillId: zod.coerce.number(),
+});
+
+export const CreateArtifactBody = zod.object({
+  name: zod.string(),
+  link: zod.string().nullish(),
+  note: zod.string().nullish(),
+});
+
+/**
+ * @summary Delete an artifact
+ */
+export const DeleteArtifactParams = zod.object({
+  teamId: zod.coerce.number(),
+  skillId: zod.coerce.number(),
+  artifactId: zod.coerce.number(),
+});
+
+export const DeleteArtifactResponse = zod.object({
+  success: zod.boolean(),
 });
 
 /**

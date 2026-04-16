@@ -1,32 +1,11 @@
 /**
  * Корневой layout приложения.
  *
- * Отвечает за:
- * 1. Боковую панель (sidebar) со списком команд, кнопками редактирования/архивации
- *    и разделом архивных команд.
- * 2. Монтирование модальных окон: EditTeamModal и AlertDialog подтверждения удаления.
- * 3. Основную область контента (main), куда рендерятся дочерние роуты.
- *
- * Управление состоянием:
- *   editingTeam      — хранит данные команды, открытой в модале редактирования (null = закрыт)
- *   deleteConfirmId  — id команды, которую пользователь хочет архивировать (null = диалог закрыт)
- *   showArchived     — булев флаг раскрытия секции "Архив" в сайдбаре
- *
- * Soft-delete (архивирование):
- *   Кнопка удаления открывает AlertDialog с описанием последствий.
- *   После подтверждения вызывается useDeleteTeam → PUT /api/teams/:id с deletedAt=now().
- *   Если удалённая команда была активна в роутере (/team/:id), происходит редирект на главную.
- *   После успеха инвалидируются оба React Query кэша: активных и удалённых команд.
- *
- * Восстановление из архива:
- *   Секция "Архив" видна только если есть удалённые команды (hasDeletedTeams).
- *   Кнопка RotateCcw вызывает useRestoreTeam → POST /api/teams/:id/restore.
- *   После восстановления команда снова появляется в активном списке.
- *
- * Анимации:
- *   Индикатор активной команды в сайдбаре (layoutId="active-indicator") анимируется
- *   через framer-motion shared layout: плавно перемещается при смене выбранной команды.
- *   Секция архива появляется/скрывается с анимацией высоты (AnimatePresence + height: "auto").
+ * Обновления:
+ * - RoleProvider оборачивает всё приложение (контекст ролей)
+ * - RoleSwitcher в подвале сайдбара
+ * - Кнопки редактирования и архивирования команды скрываются в режиме viewer
+ * - Кнопка «Add New Team» скрывается в режиме viewer
  */
 
 import { useState } from "react";
@@ -45,6 +24,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { CreateTeamModal } from "@/components/CreateTeamModal";
 import { EditTeamModal } from "@/components/EditTeamModal";
+import { RoleSwitcher } from "@/components/RoleSwitcher";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -57,14 +37,24 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useRole } from "@/contexts/RoleContext";
 
-export function AppLayout({ children }: { children: React.ReactNode }) {
+// Цветовые точки статуса оценки в сайдбаре
+const STATUS_DOT: Record<string, string> = {
+  planned: "bg-slate-400",
+  in_progress: "bg-blue-400",
+  completed: "bg-emerald-400",
+  on_hold: "bg-amber-400",
+};
+
+function SidebarContent({ children }: { children: React.ReactNode }) {
   const { data: teams, isLoading } = useGetTeams();
   const { data: deletedTeams } = useGetDeletedTeams();
   const [match, params] = useRoute("/team/:id");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isReviewer } = useRole();
 
   const [editingTeam, setEditingTeam] = useState<{ id: number; name: string; description: string } | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
@@ -76,7 +66,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         queryClient.invalidateQueries({ queryKey: getGetTeamsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetDeletedTeamsQueryKey() });
         toast({ title: "Команда перемещена в архив", description: "Запись сохранена — её можно восстановить." });
-        // Если удалили текущую открытую команду — уходим на главную
         if (match && params?.id === String(variables.teamId)) {
           setLocation("/");
         }
@@ -139,18 +128,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           ) : (
             teams?.map((team) => {
               const isActive = match && params?.id === String(team.id);
+              const statusDot = STATUS_DOT[team.assessmentStatus ?? "planned"] ?? "bg-slate-400";
               return (
                 <div key={team.id} className="relative group/row">
                   <Link
                     href={`/team/${team.id}`}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative pr-16",
+                      "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative",
+                      isReviewer ? "pr-16" : "pr-3",
                       isActive
                         ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
                         : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     )}
                   >
-                    {/* Анимированный индикатор активной команды (framer-motion shared layout) */}
                     {isActive && (
                       <motion.div
                         layoutId="active-indicator"
@@ -158,15 +148,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                         transition={{ type: "spring", stiffness: 300, damping: 30 }}
                       />
                     )}
-                    <Layers
-                      size={18}
-                      className={cn(
-                        "shrink-0 transition-colors",
-                        isActive ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground/80"
-                      )}
-                    />
+                    <div className="relative shrink-0">
+                      <Layers
+                        size={18}
+                        className={cn(
+                          "transition-colors",
+                          isActive ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground/80"
+                        )}
+                      />
+                      {/* Цветная точка статуса оценки */}
+                      <div className={cn("absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-sidebar", statusDot)} />
+                    </div>
                     <span className="font-medium text-sm truncate flex-1">{team.name}</span>
-                    {/* Бейдж с текущим общим уровнем зрелости команды */}
                     <span
                       className={cn(
                         "text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border transition-colors shrink-0",
@@ -179,37 +172,39 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     </span>
                   </Link>
 
-                  {/* Кнопки редактирования и архивирования — появляются при наведении на строку */}
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setEditingTeam({ id: team.id, name: team.name, description: team.description });
-                      }}
-                      title="Редактировать"
-                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-background/70 hover:bg-primary/20 hover:text-primary text-muted-foreground border border-border/40 transition-all"
-                    >
-                      <Pencil size={12} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setDeleteConfirmId(team.id);
-                      }}
-                      title="Архивировать"
-                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-background/70 hover:bg-destructive/20 hover:text-destructive text-muted-foreground border border-border/40 transition-all"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
+                  {/* Кнопки управления — только для reviewer */}
+                  {isReviewer && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setEditingTeam({ id: team.id, name: team.name, description: team.description });
+                        }}
+                        title="Редактировать"
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-background/70 hover:bg-primary/20 hover:text-primary text-muted-foreground border border-border/40 transition-all"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDeleteConfirmId(team.id);
+                        }}
+                        title="Архивировать"
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-background/70 hover:bg-destructive/20 hover:text-destructive text-muted-foreground border border-border/40 transition-all"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })
           )}
 
-          {/* Секция архивных команд (видна только если есть удалённые команды) */}
+          {/* Архивные команды */}
           {hasDeletedTeams && (
             <div className="mt-6">
               <button
@@ -221,7 +216,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <span className="ml-auto">{showArchived ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</span>
               </button>
 
-              {/* Анимированное раскрытие списка архивных команд */}
               <AnimatePresence>
                 {showArchived && (
                   <motion.div
@@ -238,14 +232,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       >
                         <ArchiveX size={14} className="shrink-0" />
                         <span className="text-xs truncate flex-1 line-through">{team.name}</span>
-                        <button
-                          onClick={() => restoreTeam({ teamId: team.id })}
-                          disabled={isRestoring}
-                          title="Восстановить"
-                          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg bg-background/50 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted-foreground/50 border border-border/30 transition-all"
-                        >
-                          {isRestoring ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
-                        </button>
+                        {isReviewer && (
+                          <button
+                            onClick={() => restoreTeam({ teamId: team.id })}
+                            disabled={isRestoring}
+                            title="Восстановить"
+                            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg bg-background/50 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted-foreground/50 border border-border/30 transition-all"
+                          >
+                            {isRestoring ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
+                          </button>
+                        )}
                       </div>
                     ))}
                   </motion.div>
@@ -255,20 +251,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
-        {/* Кнопка добавления новой команды */}
-        <div className="p-4 border-t border-sidebar-border bg-sidebar/50">
-          <CreateTeamModal
-            trigger={
-              <Button
-                variant="outline"
-                className="w-full justify-start text-sidebar-foreground/80 hover:text-foreground border-sidebar-border shadow-sm hover:bg-sidebar-accent group h-11 transition-all"
-              >
-                <Plus className="mr-2 h-4 w-4 text-primary/70 group-hover:text-primary transition-colors" />
-                Add New Team
-              </Button>
-            }
-          />
-        </div>
+        {/* Кнопка добавления команды — только для reviewer */}
+        {isReviewer && (
+          <div className="px-4 pt-4 border-t border-sidebar-border bg-sidebar/50">
+            <CreateTeamModal
+              trigger={
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-sidebar-foreground/80 hover:text-foreground border-sidebar-border shadow-sm hover:bg-sidebar-accent group h-11 transition-all"
+                >
+                  <Plus className="mr-2 h-4 w-4 text-primary/70 group-hover:text-primary transition-colors" />
+                  Add New Team
+                </Button>
+              }
+            />
+          </div>
+        )}
+
+        {/* Переключатель роли */}
+        <RoleSwitcher />
       </aside>
 
       {/* Основная область контента */}
@@ -299,8 +300,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <AlertDialogTitle className="font-display text-xl">Архивировать команду?</AlertDialogTitle>
             </div>
             <AlertDialogDescription className="text-muted-foreground leading-relaxed">
-              Команда <strong className="text-foreground">«{teamToDelete?.name}»</strong> будет перемещена в архив. 
-              Данные не удаляются — команду можно восстановить в любой момент из раздела «Архив» в боковой панели.
+              Команда <strong className="text-foreground">«{teamToDelete?.name}»</strong> будет перемещена в архив.
+              Данные не удаляются — команду можно восстановить в любой момент.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-2">
@@ -318,4 +319,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </AlertDialog>
     </div>
   );
+}
+
+export function AppLayout({ children }: { children: React.ReactNode }) {
+  return <SidebarContent>{children}</SidebarContent>;
 }
