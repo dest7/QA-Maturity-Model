@@ -1,7 +1,7 @@
 import path from "path";
 import { fileURLToPath } from "url";
 import { build as esbuild } from "esbuild";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, cp } from "fs/promises";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,7 +66,15 @@ async function buildAll() {
     minify: true,
     external: externals,
     logLevel: "info",
+    // import.meta.url пуст в CJS — это ожидаемо; код обрабатывает этот случай через process.argv[1]
+    logOverride: { "empty-import-meta": "silent" },
   });
+
+  // Копируем SQL-миграции в dist/drizzle/ — они нужны drizzle-orm/migrator в runtime
+  const migrationsSource = path.resolve(__dirname, "..", "..", "lib", "db", "drizzle");
+  const migrationsDest = path.resolve(distDir, "drizzle");
+  console.log("copying migrations...");
+  await cp(migrationsSource, migrationsDest, { recursive: true });
 }
 
 buildAll().catch((err) => {
