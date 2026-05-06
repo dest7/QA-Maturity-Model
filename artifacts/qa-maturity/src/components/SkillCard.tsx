@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { SkillInfoModal } from "@/components/SkillInfoModal";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -63,6 +63,40 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
   const [notes, setNotes] = useState<string>(skill.notes ?? "");
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Хранит значение, которое ещё не сохранено — используется для flush при размонтировании
+  const pendingNotesRef = useRef<string | null>(null);
+  const teamSkillKeyRef = useRef({ teamId, skillId: skill.skillId });
+
+  // Синхронизируем локальный стейт при переключении команды/навыка
+  useEffect(() => {
+    const prev = teamSkillKeyRef.current;
+    if (prev.teamId !== teamId || prev.skillId !== skill.skillId) {
+      // Сбрасываем pending-таймер предыдущего навыка (он уже сохранён через cleanup ниже)
+      if (notesTimer.current) clearTimeout(notesTimer.current);
+      notesTimer.current = null;
+      pendingNotesRef.current = null;
+      teamSkillKeyRef.current = { teamId, skillId: skill.skillId };
+    }
+    setNotes(skill.notes ?? "");
+  }, [teamId, skill.skillId, skill.notes]);
+
+  // При размонтировании — немедленно сохраняем несохранённый текст
+  useEffect(() => {
+    return () => {
+      if (notesTimer.current) clearTimeout(notesTimer.current);
+      if (pendingNotesRef.current !== null) {
+        const value = pendingNotesRef.current;
+        const { teamId: tid, skillId: sid } = teamSkillKeyRef.current;
+        const BASE = (import.meta.env.BASE_URL ?? "").replace(/\/$/, "");
+        fetch(`${BASE}/api/teams/${tid}/skills/${sid}/notes`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ notes: value || null }),
+        });
+      }
+    };
+  }, []);
 
   const { mutate: updateLevel, isPending } = useUpdateSkillLevel({
     mutation: {
@@ -144,17 +178,19 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
 
   const handleNotesChange = (value: string) => {
     setNotes(value);
+    pendingNotesRef.current = value; // помечаем как несохранённое
     if (notesTimer.current) clearTimeout(notesTimer.current);
     notesTimer.current = setTimeout(async () => {
       setIsSavingNotes(true);
       try {
-        const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+        const BASE = (import.meta.env.BASE_URL ?? "").replace(/\/$/, "");
         await fetch(`${BASE}/api/teams/${teamId}/skills/${skill.skillId}/notes`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ notes: value || null }),
         });
+        pendingNotesRef.current = null; // сохранено успешно
       } finally {
         setIsSavingNotes(false);
       }
@@ -287,7 +323,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
                 <div className="px-3 py-2.5 bg-background/50 border-b border-border/30">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-wider">
-                      Заметки
+                      Описание улучшений подхода команды
                     </span>
                     {isSavingNotes && <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground/40" />}
                   </div>
