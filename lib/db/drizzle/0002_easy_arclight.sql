@@ -1,0 +1,1 @@
+ALTER TABLE "team_skill_levels" ADD COLUMN "notes" text;

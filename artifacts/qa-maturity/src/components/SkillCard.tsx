@@ -4,8 +4,8 @@
  * Отображает один QA-навык с его текущим уровнем и позволяет изменять его.
  *
  * Права (AuthContext):
- *   canEditLevels(teamId)    — кнопки +/− изменения уровня
- *   canAddArtifacts(teamId)  — форма добавления / кнопка удаления артефактов
+ *   canEditLevels(teamId)    — кнопки +/− изменения уровня, поле заметок
+ *   canAddArtifacts(teamId)  — форма добавления / кнопка удаления / редактирования артефактов
  *
  * Кнопка «i»: SkillInfoModal — полная таблица всех 4 уровней.
  * Артефакты загружаются при раскрытии карточки (enabled: expanded).
@@ -21,12 +21,12 @@ import {
   getGetArtifactsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Minus, Plus, Loader2, ChevronDown, ChevronUp, Info, Link2, Trash2, PlusCircle, FileText } from "lucide-react";
+import { Minus, Plus, Loader2, ChevronDown, ChevronUp, Info, Link2, Trash2, PlusCircle, FileText, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { SkillInfoModal } from "@/components/SkillInfoModal";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -47,9 +47,22 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
 
   const [expanded, setExpanded] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+
+  // Artifact add form
   const [newArtifactName, setNewArtifactName] = useState("");
   const [newArtifactLink, setNewArtifactLink] = useState("");
   const [showArtifactForm, setShowArtifactForm] = useState(false);
+
+  // Artifact inline edit
+  const [editingArtifactId, setEditingArtifactId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editLink, setEditLink] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Skill notes
+  const [notes, setNotes] = useState<string>(skill.notes ?? "");
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { mutate: updateLevel, isPending } = useUpdateSkillLevel({
     mutation: {
@@ -99,6 +112,55 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
     });
   };
 
+  const startEditArtifact = (artifact: any) => {
+    setEditingArtifactId(artifact.id);
+    setEditName(artifact.name);
+    setEditLink(artifact.link ?? "");
+  };
+
+  const cancelEditArtifact = () => {
+    setEditingArtifactId(null);
+    setEditName("");
+    setEditLink("");
+  };
+
+  const saveEditArtifact = useCallback(async (artifactId: number) => {
+    if (!editName.trim()) return;
+    setIsSavingEdit(true);
+    try {
+      const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+      await fetch(`${BASE}/api/teams/${teamId}/skills/${skill.skillId}/artifacts/${artifactId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: editName.trim(), link: editLink.trim() || null }),
+      });
+      queryClient.invalidateQueries({ queryKey: getGetArtifactsQueryKey(teamId, skill.skillId) });
+      cancelEditArtifact();
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }, [editName, editLink, teamId, skill.skillId, queryClient]);
+
+  const handleNotesChange = (value: string) => {
+    setNotes(value);
+    if (notesTimer.current) clearTimeout(notesTimer.current);
+    notesTimer.current = setTimeout(async () => {
+      setIsSavingNotes(true);
+      try {
+        const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+        await fetch(`${BASE}/api/teams/${teamId}/skills/${skill.skillId}/notes`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ notes: value || null }),
+        });
+      } finally {
+        setIsSavingNotes(false);
+      }
+    }, 800);
+  };
+
   const colors = LEVEL_COLORS[skill.level as keyof typeof LEVEL_COLORS];
   const hasNextLevel = skill.level < 3;
 
@@ -112,12 +174,13 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
                 <CardTitle className="text-base font-semibold tracking-tight text-foreground/90 group-hover:text-primary transition-colors leading-tight">
                   {skill.skillName}
                 </CardTitle>
+                {/* Кнопка «i» — информация о навыке */}
                 <button
                   onClick={() => setInfoOpen(true)}
                   title="Подробное описание уровней"
-                  className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-muted-foreground/40 hover:text-primary hover:bg-primary/10 transition-all"
+                  className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-primary/50 hover:text-primary hover:bg-primary/15 border border-primary/25 hover:border-primary/50 transition-all"
                 >
-                  <Info className="w-3.5 h-3.5" />
+                  <Info className="w-3 h-3" />
                 </button>
               </div>
               <span className={cn("inline-flex items-center text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border", colors.badge)}>
@@ -217,8 +280,33 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
                 </div>
               </div>
 
-              {/* Прикреплённые артефакты команды */}
+              {/* Блок прикреплённых артефактов команды */}
               <div className="rounded-xl border border-border/40 overflow-hidden">
+
+                {/* Заметки команды по навыку */}
+                <div className="px-3 py-2.5 bg-background/50 border-b border-border/30">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-wider">
+                      Заметки
+                    </span>
+                    {isSavingNotes && <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground/40" />}
+                  </div>
+                  {canArtifact || canEdit ? (
+                    <textarea
+                      value={notes}
+                      onChange={(e) => handleNotesChange(e.target.value)}
+                      placeholder="Контекст, план действий, препятствия..."
+                      rows={2}
+                      className="w-full text-xs bg-background/40 border border-border/40 rounded-lg px-2.5 py-2 text-foreground/80 placeholder:text-muted-foreground/30 resize-none focus:outline-none focus:border-primary/40 focus:bg-background/60 transition-colors leading-relaxed"
+                    />
+                  ) : (
+                    notes
+                      ? <p className="text-xs text-foreground/70 leading-relaxed">{notes}</p>
+                      : <p className="text-xs text-muted-foreground/30 italic">Нет заметок</p>
+                  )}
+                </div>
+
+                {/* Заголовок артефактов */}
                 <div className="flex items-center justify-between px-3 py-2 bg-background/60 border-b border-border/30">
                   <span className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider flex items-center gap-1.5">
                     <FileText className="w-3 h-3" />
@@ -282,37 +370,85 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
                     <p className="text-[11px] text-muted-foreground/40 text-center py-1 italic">Артефакты не прикреплены</p>
                   ) : (
                     artifacts.map((artifact) => (
-                      <div key={artifact.id} className="flex items-center gap-2 group/art">
-                        <div className="flex-1 min-w-0">
-                          {artifact.link ? (
-                            <a
-                              href={artifact.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-primary/80 hover:text-primary transition-colors truncate"
-                            >
-                              <Link2 className="w-3 h-3 shrink-0" />
-                              <span className="truncate">{artifact.name}</span>
-                            </a>
-                          ) : (
-                            <span className="flex items-center gap-1.5 text-xs text-foreground/70 truncate">
-                              <FileText className="w-3 h-3 shrink-0 text-muted-foreground/50" />
-                              <span className="truncate">{artifact.name}</span>
-                            </span>
-                          )}
-                          {artifact.note && (
-                            <p className="text-[10px] text-muted-foreground/50 mt-0.5 truncate pl-4">{artifact.note}</p>
-                          )}
-                        </div>
-                        {canArtifact && (
-                          <button
-                            onClick={() => deleteArtifact({ teamId, skillId: skill.skillId, artifactId: artifact.id })}
-                            disabled={isDeleting}
-                            className="shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover/art:opacity-100 transition-all"
-                            title="Удалить артефакт"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                      <div key={artifact.id} className="flex flex-col gap-1 group/art">
+                        {editingArtifactId === artifact.id ? (
+                          /* Инлайн-форма редактирования */
+                          <div className="flex flex-col gap-1.5 p-2 bg-background/50 rounded-lg border border-primary/20">
+                            <Input
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                              placeholder="Название *"
+                              className="h-6 text-xs bg-background/60 border-border/40"
+                              autoFocus
+                            />
+                            <Input
+                              value={editLink}
+                              onChange={(e) => setEditLink(e.target.value)}
+                              placeholder="Ссылка (необязательно)"
+                              className="h-6 text-xs bg-background/60 border-border/40"
+                            />
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={() => saveEditArtifact(artifact.id)}
+                                disabled={!editName.trim() || isSavingEdit}
+                                className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 disabled:opacity-40 transition-colors"
+                              >
+                                {isSavingEdit ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5" />}
+                                Сохранить
+                              </button>
+                              <span className="text-muted-foreground/30">·</span>
+                              <button
+                                onClick={cancelEditArtifact}
+                                className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                              >
+                                Отмена
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* Обычное отображение артефакта */
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 min-w-0">
+                              {artifact.link ? (
+                                <a
+                                  href={artifact.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 text-xs text-primary/80 hover:text-primary transition-colors truncate"
+                                >
+                                  <Link2 className="w-3 h-3 shrink-0" />
+                                  <span className="truncate">{artifact.name}</span>
+                                </a>
+                              ) : (
+                                <span className="flex items-center gap-1.5 text-xs text-foreground/70 truncate">
+                                  <FileText className="w-3 h-3 shrink-0 text-muted-foreground/50" />
+                                  <span className="truncate">{artifact.name}</span>
+                                </span>
+                              )}
+                              {artifact.note && (
+                                <p className="text-[10px] text-muted-foreground/50 mt-0.5 truncate pl-4">{artifact.note}</p>
+                              )}
+                            </div>
+                            {canArtifact && (
+                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/art:opacity-100 transition-all">
+                                <button
+                                  onClick={() => startEditArtifact(artifact)}
+                                  className="w-5 h-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-primary hover:bg-primary/10 transition-all"
+                                  title="Редактировать артефакт"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => deleteArtifact({ teamId, skillId: skill.skillId, artifactId: artifact.id })}
+                                  disabled={isDeleting}
+                                  className="w-5 h-5 flex items-center justify-center rounded text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-all"
+                                  title="Удалить артефакт"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     ))

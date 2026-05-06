@@ -66,6 +66,8 @@ export const teamSkillLevelsTable = pgTable("team_skill_levels", {
   skillId: integer("skill_id").notNull().references(() => skillsTable.id, { onDelete: "cascade" }),
   // Текущий уровень зрелости команды по данному навыку (0..3)
   level: integer("level").notNull().default(0),
+  // Свободный текст — заметки команды по данному навыку (контекст, план действий и т.д.)
+  notes: text("notes"),
 });
 
 export const teamSkillArtifactsTable = pgTable("team_skill_artifacts", {

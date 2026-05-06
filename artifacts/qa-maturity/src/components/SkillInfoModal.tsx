@@ -2,17 +2,6 @@
  * Модальное окно с полным описанием всех уровней конкретного навыка.
  *
  * Открывается по нажатию кнопки «i» на карточке SkillCard.
- * Показывает детальную таблицу уровней 0–3 для данного навыка:
- *   - Описание состояния на уровне (levelDescriptions)
- *   - Требования к уровню (levelRequirements)
- *   - Артефакты подтверждения (levelArtifacts)
- *   - Рекомендации для перехода на следующий уровень (levelRecommendations)
- *
- * Текущий уровень команды по этому навыку выделяется визуально:
- *   подсветкой заголовка колонки и фоновым цветом.
- *
- * Все данные уже присутствуют в объекте skill из GET /api/teams/:teamId,
- * дополнительных запросов к API не требуется.
  */
 
 import {
@@ -67,7 +56,7 @@ export function SkillInfoModal({ open, onOpenChange, skill }: SkillInfoModalProp
               <DialogTitle className="text-xl font-display font-bold text-foreground leading-tight">
                 {skill.skillName}
               </DialogTitle>
-              <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
+              <p className="text-sm text-foreground/70 mt-1 leading-relaxed">
                 {skill.skillDescription}
               </p>
             </div>
@@ -78,7 +67,6 @@ export function SkillInfoModal({ open, onOpenChange, skill }: SkillInfoModalProp
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                {/* Пустая ячейка для строки меток */}
                 <th className="w-36 pb-3 pr-4 text-left" />
                 {[0, 1, 2, 3].map((lvl) => {
                   const colors = LEVEL_COLORS[lvl as keyof typeof LEVEL_COLORS];
@@ -95,10 +83,10 @@ export function SkillInfoModal({ open, onOpenChange, skill }: SkillInfoModalProp
                     >
                       <div className="flex flex-col items-center gap-1.5">
                         <div className={cn("w-2 h-2 rounded-full", colors.dot)} />
-                        <span className={cn("font-bold text-xs uppercase tracking-wider", isActive ? colors.header : "text-muted-foreground/50")}>
+                        <span className={cn("font-bold text-xs uppercase tracking-wider", isActive ? colors.header : "text-foreground/50")}>
                           Уровень {lvl}
                         </span>
-                        <span className={cn("text-[10px] font-semibold", isActive ? colors.header : "text-muted-foreground/40")}>
+                        <span className={cn("text-[10px] font-semibold", isActive ? colors.header : "text-foreground/40")}>
                           {LEVEL_LABELS[lvl]}
                         </span>
                         {isActive && (
@@ -116,7 +104,7 @@ export function SkillInfoModal({ open, onOpenChange, skill }: SkillInfoModalProp
               {rows.map(({ label, key }, rowIdx) => (
                 <tr key={key}>
                   <td className={cn(
-                    "pr-4 py-4 align-top text-[11px] font-bold text-muted-foreground/60 uppercase tracking-wider whitespace-nowrap",
+                    "pr-4 py-4 align-top text-[11px] font-bold text-foreground/50 uppercase tracking-wider whitespace-nowrap",
                     rowIdx < rows.length - 1 ? "border-b border-border/20" : ""
                   )}>
                     {label}
@@ -134,8 +122,8 @@ export function SkillInfoModal({ open, onOpenChange, skill }: SkillInfoModalProp
                           isActive ? cn("border-x", colors.active, isLastRow ? "rounded-b-xl border-b" : "") : "",
                           !isActive && rowIdx < rows.length - 1 ? "border-b border-border/20" : "",
                           key === "levelRecommendations" && lvl < 3
-                            ? isActive ? "text-primary/90 font-medium" : "text-muted-foreground/50"
-                            : isActive ? "text-foreground/85" : "text-muted-foreground/50"
+                            ? isActive ? "text-primary/90 font-medium" : "text-foreground/55"
+                            : isActive ? "text-foreground/90" : "text-foreground/60"
                         )}
                       >
                         {text}

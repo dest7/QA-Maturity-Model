@@ -32,6 +32,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { teamsTable, skillsTable, teamSkillLevelsTable } from "@workspace/db";
 import { eq, and, isNull, isNotNull } from "drizzle-orm";
+import { z } from "zod/v4";
 import {
   CreateTeamBody,
   UpdateSkillLevelBody,
@@ -131,6 +132,7 @@ router.get("/:teamId", async (req, res) => {
       levelArtifacts: skillsTable.levelArtifacts,
       levelRecommendations: skillsTable.levelRecommendations,
       level: teamSkillLevelsTable.level,
+      notes: teamSkillLevelsTable.notes,
     })
     .from(teamSkillLevelsTable)
     .innerJoin(skillsTable, eq(skillsTable.id, teamSkillLevelsTable.skillId))
@@ -215,6 +217,19 @@ router.post("/:teamId/restore", async (req, res) => {
     .returning();
 
   res.json(restored);
+});
+
+// Обновление заметок (notes) по навыку для команды
+router.patch("/:teamId/skills/:skillId/notes", async (req, res) => {
+  const { teamId, skillId } = UpdateSkillLevelParams.parse(req.params);
+  const body = z.object({ notes: z.string().nullable() }).parse(req.body);
+
+  await db
+    .update(teamSkillLevelsTable)
+    .set({ notes: body.notes })
+    .where(and(eq(teamSkillLevelsTable.teamId, teamId), eq(teamSkillLevelsTable.skillId, skillId)));
+
+  res.json({ success: true });
 });
 
 // Изменение уровня навыка для команды с пересчётом overallLevel и обновлением lastAssessedAt
