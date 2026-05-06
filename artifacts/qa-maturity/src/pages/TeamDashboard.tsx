@@ -97,7 +97,7 @@ export function TeamDashboard({ teamId }: { teamId: number }) {
     : null;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1400px] mx-auto pb-20">
+    <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1800px] mx-auto pb-20">
 
       {/* Шапка: название, статус оценки, бейдж общего уровня */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-10">
