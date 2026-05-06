@@ -1,11 +1,10 @@
 /**
  * Корневой layout приложения.
  *
- * Обновления:
- * - RoleProvider оборачивает всё приложение (контекст ролей)
- * - RoleSwitcher в подвале сайдбара
- * - Кнопки редактирования и архивирования команды скрываются в режиме viewer
- * - Кнопка «Add New Team» скрывается в режиме viewer
+ * Использует AuthContext вместо устаревшего RoleContext.
+ * Права на управление командами (создать / редактировать / архивировать)
+ * проверяются через canManageTeams() — true только для admin.
+ * Страница метрик видна manager и admin.
  */
 
 import { useState } from "react";
@@ -24,7 +23,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { CreateTeamModal } from "@/components/CreateTeamModal";
 import { EditTeamModal } from "@/components/EditTeamModal";
-import { RoleSwitcher } from "@/components/RoleSwitcher";
+import { UserMenu } from "@/components/UserMenu";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -37,24 +36,27 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useRole } from "@/contexts/RoleContext";
+import { useAuth } from "@/contexts/AuthContext";
 
-// Цветовые точки статуса оценки в сайдбаре
 const STATUS_DOT: Record<string, string> = {
-  planned: "bg-slate-400",
+  planned:     "bg-slate-400",
   in_progress: "bg-blue-400",
-  completed: "bg-emerald-400",
-  on_hold: "bg-amber-400",
+  completed:   "bg-emerald-400",
+  on_hold:     "bg-amber-400",
 };
 
 function SidebarContent({ children }: { children: React.ReactNode }) {
   const { data: teams, isLoading } = useGetTeams();
   const { data: deletedTeams } = useGetDeletedTeams();
   const [match, params] = useRoute("/team/:id");
+  const [metricsMatch] = useRoute("/metrics");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { isReviewer } = useRole();
+  const { canManageTeams, canViewMetrics } = useAuth();
+
+  const isAdmin = canManageTeams();
+  const showMetrics = canViewMetrics();
 
   const [editingTeam, setEditingTeam] = useState<{ id: number; name: string; description: string } | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
@@ -66,9 +68,7 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
         queryClient.invalidateQueries({ queryKey: getGetTeamsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetDeletedTeamsQueryKey() });
         toast({ title: "Команда перемещена в архив", description: "Запись сохранена — её можно восстановить." });
-        if (match && params?.id === String(variables.teamId)) {
-          setLocation("/");
-        }
+        if (match && params?.id === String(variables.teamId)) setLocation("/");
         setDeleteConfirmId(null);
       },
       onError: () => {
@@ -122,9 +122,7 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
               <Loader2 className="w-6 h-6 animate-spin text-primary/40" />
             </div>
           ) : teams?.length === 0 ? (
-            <div className="px-2 py-4 text-sm text-muted-foreground text-center">
-              Нет активных команд.
-            </div>
+            <div className="px-2 py-4 text-sm text-muted-foreground text-center">Нет активных команд.</div>
           ) : (
             teams?.map((team) => {
               const isActive = match && params?.id === String(team.id);
@@ -135,7 +133,7 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
                     href={`/team/${team.id}`}
                     className={cn(
                       "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative",
-                      isReviewer ? "pr-16" : "pr-3",
+                      isAdmin ? "pr-16" : "pr-3",
                       isActive
                         ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
                         : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
@@ -149,49 +147,32 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
                       />
                     )}
                     <div className="relative shrink-0">
-                      <Layers
-                        size={18}
-                        className={cn(
-                          "transition-colors",
-                          isActive ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground/80"
-                        )}
-                      />
-                      {/* Цветная точка статуса оценки */}
+                      <Layers size={18} className={cn("transition-colors", isActive ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground/80")} />
                       <div className={cn("absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-sidebar", statusDot)} />
                     </div>
                     <span className="font-medium text-sm truncate flex-1">{team.name}</span>
-                    <span
-                      className={cn(
-                        "text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border transition-colors shrink-0",
-                        isActive
-                          ? "bg-background/80 border-border text-foreground shadow-inner"
-                          : "bg-background/30 border-border/40 text-muted-foreground group-hover:bg-background/60"
-                      )}
-                    >
+                    <span className={cn(
+                      "text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border transition-colors shrink-0",
+                      isActive
+                        ? "bg-background/80 border-border text-foreground shadow-inner"
+                        : "bg-background/30 border-border/40 text-muted-foreground group-hover:bg-background/60"
+                    )}>
                       L{team.overallLevel}
                     </span>
                   </Link>
 
-                  {/* Кнопки управления — только для reviewer */}
-                  {isReviewer && (
+                  {/* Кнопки управления — только для admin */}
+                  {isAdmin && (
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
                       <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setEditingTeam({ id: team.id, name: team.name, description: team.description });
-                        }}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingTeam({ id: team.id, name: team.name, description: team.description }); }}
                         title="Редактировать"
                         className="w-7 h-7 flex items-center justify-center rounded-lg bg-background/70 hover:bg-primary/20 hover:text-primary text-muted-foreground border border-border/40 transition-all"
                       >
                         <Pencil size={12} />
                       </button>
                       <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setDeleteConfirmId(team.id);
-                        }}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteConfirmId(team.id); }}
                         title="Архивировать"
                         className="w-7 h-7 flex items-center justify-center rounded-lg bg-background/70 hover:bg-destructive/20 hover:text-destructive text-muted-foreground border border-border/40 transition-all"
                       >
@@ -215,7 +196,6 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
                 <span>Архив ({deletedTeams?.length})</span>
                 <span className="ml-auto">{showArchived ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</span>
               </button>
-
               <AnimatePresence>
                 {showArchived && (
                   <motion.div
@@ -226,13 +206,10 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
                     className="overflow-hidden mt-1 space-y-1"
                   >
                     {deletedTeams?.map((team) => (
-                      <div
-                        key={team.id}
-                        className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border/20 bg-background/20 text-muted-foreground/50"
-                      >
+                      <div key={team.id} className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border/20 bg-background/20 text-muted-foreground/50">
                         <ArchiveX size={14} className="shrink-0" />
                         <span className="text-xs truncate flex-1 line-through">{team.name}</span>
-                        {isReviewer && (
+                        {isAdmin && (
                           <button
                             onClick={() => restoreTeam({ teamId: team.id })}
                             disabled={isRestoring}
@@ -249,10 +226,34 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
               </AnimatePresence>
             </div>
           )}
+
+          {/* Ссылка на метрики */}
+          {showMetrics && (
+            <div className="mt-4">
+              <div className="text-[11px] font-bold text-sidebar-foreground/40 uppercase tracking-widest mb-2 px-2 flex items-center gap-2">
+                <BarChart2 size={12} /> Analytics
+              </div>
+              <Link
+                href="/metrics"
+                className={cn(
+                  "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative",
+                  metricsMatch
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                )}
+              >
+                {metricsMatch && (
+                  <motion.div layoutId="active-indicator" className="absolute left-0 w-1 h-6 bg-primary rounded-r-full" transition={{ type: "spring", stiffness: 300, damping: 30 }} />
+                )}
+                <BarChart2 size={18} className={cn("transition-colors", metricsMatch ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground/80")} />
+                <span className="font-medium text-sm">Company Metrics</span>
+              </Link>
+            </div>
+          )}
         </div>
 
-        {/* Кнопка добавления команды — только для reviewer */}
-        {isReviewer && (
+        {/* Кнопка добавления команды — только для admin */}
+        {isAdmin && (
           <div className="px-4 pt-4 border-t border-sidebar-border bg-sidebar/50">
             <CreateTeamModal
               trigger={
@@ -268,8 +269,8 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        {/* Переключатель роли */}
-        <RoleSwitcher />
+        {/* Меню пользователя */}
+        <UserMenu />
       </aside>
 
       {/* Основная область контента */}

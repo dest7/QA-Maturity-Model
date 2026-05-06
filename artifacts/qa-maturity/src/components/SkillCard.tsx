@@ -3,17 +3,12 @@
  *
  * Отображает один QA-навык с его текущим уровнем и позволяет изменять его.
  *
- * Роль (useRole):
- *   reviewer — видит кнопки +/−, форму добавления артефактов, кнопку удаления артефактов.
- *   viewer   — видит только информацию без элементов редактирования.
+ * Права (AuthContext):
+ *   canEditLevels(teamId)    — кнопки +/− изменения уровня
+ *   canAddArtifacts(teamId)  — форма добавления / кнопка удаления артефактов
  *
- * Кнопка «i»:
- *   Открывает SkillInfoModal — полную таблицу всех 4 уровней навыка.
- *
- * Артефакты:
- *   Загружаются через useGetArtifacts при раскрытии карточки.
- *   Reviewer может добавлять и удалять артефакты.
- *   Артефакт с ссылкой рендерится как кликабельная метка.
+ * Кнопка «i»: SkillInfoModal — полная таблица всех 4 уровней.
+ * Артефакты загружаются при раскрытии карточки (enabled: expanded).
  */
 
 import {
@@ -33,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { SkillInfoModal } from "@/components/SkillInfoModal";
-import { useRole } from "@/contexts/RoleContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 const LEVEL_COLORS = {
   0: { bar: "bg-slate-500", glow: "shadow-[0_0_8px_rgba(100,116,139,0.5)]", text: "text-slate-400", badge: "bg-slate-500/10 text-slate-300 border-slate-500/30" },
@@ -46,7 +41,10 @@ const LEVEL_LABELS = ["Initial", "Developing", "Defined", "Optimized"];
 
 export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
   const queryClient = useQueryClient();
-  const { isReviewer } = useRole();
+  const { canEditLevels, canAddArtifacts } = useAuth();
+  const canEdit = canEditLevels(teamId);
+  const canArtifact = canAddArtifacts(teamId);
+
   const [expanded, setExpanded] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [newArtifactName, setNewArtifactName] = useState("");
@@ -88,7 +86,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
   });
 
   const handleUpdate = (newLevel: number) => {
-    if (newLevel < 0 || newLevel > 3 || isPending || !isReviewer) return;
+    if (newLevel < 0 || newLevel > 3 || isPending || !canEdit) return;
     updateLevel({ teamId, skillId: skill.skillId, data: { level: newLevel } });
   };
 
@@ -114,7 +112,6 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
                 <CardTitle className="text-base font-semibold tracking-tight text-foreground/90 group-hover:text-primary transition-colors leading-tight">
                   {skill.skillName}
                 </CardTitle>
-                {/* Кнопка «i» — открывает полное описание всех уровней навыка */}
                 <button
                   onClick={() => setInfoOpen(true)}
                   title="Подробное описание уровней"
@@ -128,8 +125,8 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
               </span>
             </div>
 
-            {/* Контрол изменения уровня — только для reviewer */}
-            {isReviewer ? (
+            {/* Контрол изменения уровня */}
+            {canEdit ? (
               <div className="flex items-center shrink-0 bg-background/90 rounded-lg p-0.5 border border-border/50 shadow-inner">
                 <Button
                   variant="ghost"
@@ -154,7 +151,6 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
                 </Button>
               </div>
             ) : (
-              // Viewer: просто цифра уровня без кнопок
               <div className={cn("shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black font-mono border", colors.badge)}>
                 {skill.level}
               </div>
@@ -170,10 +166,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
               return (
                 <div
                   key={l}
-                  className={cn(
-                    "flex-1 rounded-full transition-all duration-500 ease-out",
-                    l <= skill.level ? `${c.bar} ${c.glow}` : "bg-secondary opacity-40"
-                  )}
+                  className={cn("flex-1 rounded-full transition-all duration-500 ease-out", l <= skill.level ? `${c.bar} ${c.glow}` : "bg-secondary opacity-40")}
                 />
               );
             })}
@@ -224,14 +217,14 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
                 </div>
               </div>
 
-              {/* Секция прикреплённых артефактов команды */}
+              {/* Прикреплённые артефакты команды */}
               <div className="rounded-xl border border-border/40 overflow-hidden">
                 <div className="flex items-center justify-between px-3 py-2 bg-background/60 border-b border-border/30">
                   <span className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider flex items-center gap-1.5">
                     <FileText className="w-3 h-3" />
                     Прикреплённые артефакты команды
                   </span>
-                  {isReviewer && !showArtifactForm && (
+                  {canArtifact && !showArtifactForm && (
                     <button
                       onClick={() => setShowArtifactForm(true)}
                       className="flex items-center gap-1 text-[10px] font-semibold text-primary/70 hover:text-primary transition-colors"
@@ -243,7 +236,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
                 </div>
 
                 {/* Форма добавления артефакта */}
-                {isReviewer && showArtifactForm && (
+                {canArtifact && showArtifactForm && (
                   <div className="p-3 bg-background/40 border-b border-border/30 flex flex-col gap-2">
                     <Input
                       placeholder="Название артефакта *"
@@ -286,15 +279,10 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
                       <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/40" />
                     </div>
                   ) : !artifacts || artifacts.length === 0 ? (
-                    <p className="text-[11px] text-muted-foreground/40 text-center py-1 italic">
-                      Артефакты не прикреплены
-                    </p>
+                    <p className="text-[11px] text-muted-foreground/40 text-center py-1 italic">Артефакты не прикреплены</p>
                   ) : (
                     artifacts.map((artifact) => (
-                      <div
-                        key={artifact.id}
-                        className="flex items-center gap-2 group/art"
-                      >
+                      <div key={artifact.id} className="flex items-center gap-2 group/art">
                         <div className="flex-1 min-w-0">
                           {artifact.link ? (
                             <a
@@ -316,7 +304,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
                             <p className="text-[10px] text-muted-foreground/50 mt-0.5 truncate pl-4">{artifact.note}</p>
                           )}
                         </div>
-                        {isReviewer && (
+                        {canArtifact && (
                           <button
                             onClick={() => deleteArtifact({ teamId, skillId: skill.skillId, artifactId: artifact.id })}
                             disabled={isDeleting}
@@ -336,12 +324,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
         </CardContent>
       </Card>
 
-      {/* Модальное окно с полным описанием всех уровней навыка */}
-      <SkillInfoModal
-        open={infoOpen}
-        onOpenChange={setInfoOpen}
-        skill={skill}
-      />
+      <SkillInfoModal open={infoOpen} onOpenChange={setInfoOpen} skill={skill} />
     </>
   );
 }

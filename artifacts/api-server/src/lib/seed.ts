@@ -6,6 +6,9 @@
  * 2. Если данные есть — логируем "already seeded" и выходим без изменений (идемпотентность).
  * 3. Если база пустая — вставляем 15 навыков и 5 тестовых команд.
  *
+ * Пользователи (seedUsersIfEmpty) вставляются отдельно — это позволяет добавлять
+ * их даже если skills/teams уже были засеяны ранее.
+ *
  * Seed запускается автоматически при старте API-сервера (вызов в index.ts).
  * Это гарантирует, что продакшен-база заполнится данными при первом деплое,
  * без необходимости вручную запускать скрипты.
@@ -24,7 +27,9 @@
  *   Team Epsilon — смешанный профиль уровень 1-2
  */
 
-import { db, skillsTable, teamsTable, teamSkillLevelsTable } from "@workspace/db";
+import bcrypt from "bcryptjs";
+import { db, skillsTable, teamsTable, teamSkillLevelsTable, usersTable } from "@workspace/db";
+import { isNull } from "drizzle-orm";
 
 const SKILLS = [
   {
@@ -506,37 +511,67 @@ function calculateOverallLevel(levels: number[]): number {
   return 0;
 }
 
+async function seedUsersIfEmpty(): Promise<void> {
+  const existingUsers = await db.select().from(usersTable).limit(1);
+  if (existingUsers.length > 0) {
+    console.log("Users already seeded — skipping.");
+    return;
+  }
+
+  // Получаем ID командных для назначения Boris и Igor
+  const teams = await db.select().from(teamsTable).where(isNull(teamsTable.deletedAt));
+  const alphaId = teams.find((t) => t.name === "Team Alpha")?.id;
+  const betaId = teams.find((t) => t.name === "Team Beta")?.id;
+  const assignedIds = [alphaId, betaId].filter((id): id is number => id !== undefined);
+
+  const users = [
+    { name: "Edward",  email: "edward@company.com", password: "Edward",  role: "admin",       assignedTeamIds: [] as number[] },
+    { name: "Anna",    email: "anna@company.com",   password: "Anna",    role: "viewer",      assignedTeamIds: [] },
+    { name: "Boris",   email: "boris@company.com",  password: "Boris",   role: "contributor", assignedTeamIds: assignedIds },
+    { name: "Clara",   email: "clara@company.com",  password: "Clara",   role: "reviewer",    assignedTeamIds: [] },
+    { name: "Igor",    email: "igor@company.com",   password: "Igor",    role: "manager",     assignedTeamIds: assignedIds },
+  ];
+
+  for (const u of users) {
+    const passwordHash = await bcrypt.hash(u.password, 10);
+    await db.insert(usersTable).values({ name: u.name, email: u.email, passwordHash, role: u.role, assignedTeamIds: u.assignedTeamIds });
+    console.log(`  ✓ Created user "${u.name}" (${u.role})`);
+  }
+}
+
 export async function seedIfEmpty(): Promise<void> {
   // Проверяем наличие данных — достаточно одной записи
   const existing = await db.select().from(skillsTable).limit(1);
   if (existing.length > 0) {
-    console.log("Database already seeded — skipping.");
-    return;
+    console.log("Database already seeded — skipping skills/teams.");
+  } else {
+    console.log("Empty database detected — seeding initial data...");
+
+    // Вставляем все 15 навыков и получаем обратно ID для связки с командами
+    const insertedSkills = await db.insert(skillsTable).values(SKILLS).returning();
+    console.log(`  ✓ Inserted ${insertedSkills.length} skills`);
+
+    // Создаём каждую тестовую команду и её уровни навыков
+    for (const teamData of SAMPLE_TEAMS) {
+      const overallLevel = calculateOverallLevel(teamData.skillLevels);
+      const [team] = await db
+        .insert(teamsTable)
+        .values({ name: teamData.name, description: teamData.description, overallLevel })
+        .returning();
+
+      await db.insert(teamSkillLevelsTable).values(
+        insertedSkills.map((skill, idx) => ({
+          teamId: team.id,
+          skillId: skill.id,
+          level: teamData.skillLevels[idx] ?? 0,
+        }))
+      );
+      console.log(`  ✓ Created team "${team.name}" (overall level ${overallLevel})`);
+    }
+
+    console.log("Seed complete.");
   }
 
-  console.log("Empty database detected — seeding initial data...");
-
-  // Вставляем все 15 навыков и получаем обратно ID для связки с командами
-  const insertedSkills = await db.insert(skillsTable).values(SKILLS).returning();
-  console.log(`  ✓ Inserted ${insertedSkills.length} skills`);
-
-  // Создаём каждую тестовую команду и её уровни навыков
-  for (const teamData of SAMPLE_TEAMS) {
-    const overallLevel = calculateOverallLevel(teamData.skillLevels);
-    const [team] = await db
-      .insert(teamsTable)
-      .values({ name: teamData.name, description: teamData.description, overallLevel })
-      .returning();
-
-    await db.insert(teamSkillLevelsTable).values(
-      insertedSkills.map((skill, idx) => ({
-        teamId: team.id,
-        skillId: skill.id,
-        level: teamData.skillLevels[idx] ?? 0,
-      }))
-    );
-    console.log(`  ✓ Created team "${team.name}" (overall level ${overallLevel})`);
-  }
-
-  console.log("Seed complete.");
+  // Всегда проверяем и добавляем пользователей, даже если skills уже есть
+  await seedUsersIfEmpty();
 }
