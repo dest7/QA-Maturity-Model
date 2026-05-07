@@ -14,13 +14,37 @@
 
 import express, { type Express } from "express";
 import cors from "cors";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { pool } from "@workspace/db";
 import router from "./routes";
 
+declare module "express-session" {
+  interface SessionData {
+    userId: number;
+  }
+}
+
+const PgStore = connectPgSimple(session);
 const app: Express = express();
 
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(
+  session({
+    store: new PgStore({ pool, createTableIfMissing: true }),
+    secret: process.env.SESSION_SECRET ?? "qa-maturity-dev-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    },
+  })
+);
 
 app.use("/api", router);
 

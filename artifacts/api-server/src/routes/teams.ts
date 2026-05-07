@@ -5,7 +5,6 @@
  *   Уровень N присваивается команде, если >= 85% навыков достигли уровня N или выше.
  *   Поиск ведётся сверху вниз (от 3 до 1), чтобы вернуть максимально достигнутый уровень.
  *   Если ни один уровень не достигнут порогом — возвращается 0.
- *   Пример: из 15 навыков 13 имеют level >= 2 → команда получает overallLevel = 2.
  *
  * Soft-delete (мягкое удаление):
  *   Команды не удаляются физически. Вместо этого при архивировании заполняется
@@ -16,21 +15,24 @@
  *   строку "deleted" как значение параметра :teamId и вернёт 404.
  *
  * Маршруты:
- *   GET    /api/teams                          — активные команды (deletedAt IS NULL)
- *   GET    /api/teams/deleted                  — архивные команды (deletedAt IS NOT NULL)
- *   POST   /api/teams                          — создать команду; автоматически создаёт записи
- *                                                team_skill_levels для всех навыков с уровнем 0
- *   GET    /api/teams/:teamId                  — команда + все навыки с их уровнями (JOIN)
- *   PUT    /api/teams/:teamId                  — изменить name/description
- *   DELETE /api/teams/:teamId                  — архивировать (soft delete)
- *   POST   /api/teams/:teamId/restore          — восстановить из архива
- *   PUT    /api/teams/:teamId/skills/:skillId  — изменить уровень навыка, пересчитать overallLevel
+ *   GET    /api/teams                                 — активные команды
+ *   GET    /api/teams/deleted                         — архивные команды
+ *   POST   /api/teams                                 — создать команду
+ *   GET    /api/teams/:teamId                         — команда + навыки (JOIN)
+ *   PUT    /api/teams/:teamId                         — изменить name/description
+ *   PATCH  /api/teams/:teamId/status                  — изменить статус оценки
+ *   DELETE /api/teams/:teamId                         — архивировать (soft delete)
+ *   POST   /api/teams/:teamId/restore                 — восстановить из архива
+ *   PUT    /api/teams/:teamId/skills/:skillId         — изменить уровень навыка,
+ *                                                       пересчитать overallLevel,
+ *                                                       обновить lastAssessedAt
  */
 
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { teamsTable, skillsTable, teamSkillLevelsTable } from "@workspace/db";
 import { eq, and, isNull, isNotNull } from "drizzle-orm";
+import { z } from "zod/v4";
 import {
   CreateTeamBody,
   UpdateSkillLevelBody,
@@ -40,6 +42,8 @@ import {
   UpdateTeamParams,
   RestoreTeamParams,
   UpdateSkillLevelParams,
+  UpdateTeamStatusBody,
+  UpdateTeamStatusParams,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -84,14 +88,18 @@ router.get("/deleted", async (_req, res) => {
 });
 
 // Создание новой команды
-// После вставки команды автоматически создаются записи team_skill_levels для каждого навыка с level = 0
 router.post("/", async (req, res) => {
   const body = CreateTeamBody.parse(req.body);
   const skills = await db.select().from(skillsTable);
 
   const [team] = await db
     .insert(teamsTable)
-    .values({ name: body.name, description: body.description, overallLevel: 0 })
+    .values({
+      name: body.name,
+      description: body.description,
+      overallLevel: 0,
+      assessmentStatus: "planned",
+    })
     .returning();
 
   if (skills.length > 0) {
@@ -124,6 +132,7 @@ router.get("/:teamId", async (req, res) => {
       levelArtifacts: skillsTable.levelArtifacts,
       levelRecommendations: skillsTable.levelRecommendations,
       level: teamSkillLevelsTable.level,
+      notes: teamSkillLevelsTable.notes,
     })
     .from(teamSkillLevelsTable)
     .innerJoin(skillsTable, eq(skillsTable.id, teamSkillLevelsTable.skillId))
@@ -147,6 +156,26 @@ router.put("/:teamId", async (req, res) => {
   const [updated] = await db
     .update(teamsTable)
     .set({ name: body.name, description: body.description })
+    .where(eq(teamsTable.id, teamId))
+    .returning();
+
+  res.json(updated);
+});
+
+// Обновление статуса оценки зрелости команды (только для ревьюверов)
+router.patch("/:teamId/status", async (req, res) => {
+  const { teamId } = UpdateTeamStatusParams.parse(req.params);
+  const body = UpdateTeamStatusBody.parse(req.body);
+
+  const existing = await db.select().from(teamsTable).where(eq(teamsTable.id, teamId));
+  if (existing.length === 0) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+
+  const [updated] = await db
+    .update(teamsTable)
+    .set({ assessmentStatus: body.assessmentStatus })
     .where(eq(teamsTable.id, teamId))
     .returning();
 
@@ -190,7 +219,20 @@ router.post("/:teamId/restore", async (req, res) => {
   res.json(restored);
 });
 
-// Изменение уровня навыка для команды с последующим пересчётом общего уровня зрелости
+// Обновление заметок (notes) по навыку для команды
+router.patch("/:teamId/skills/:skillId/notes", async (req, res) => {
+  const { teamId, skillId } = UpdateSkillLevelParams.parse(req.params);
+  const body = z.object({ notes: z.string().nullable() }).parse(req.body);
+
+  await db
+    .update(teamSkillLevelsTable)
+    .set({ notes: body.notes })
+    .where(and(eq(teamSkillLevelsTable.teamId, teamId), eq(teamSkillLevelsTable.skillId, skillId)));
+
+  res.json({ success: true });
+});
+
+// Изменение уровня навыка для команды с пересчётом overallLevel и обновлением lastAssessedAt
 router.put("/:teamId/skills/:skillId", async (req, res) => {
   const { teamId, skillId } = UpdateSkillLevelParams.parse(req.params);
   const body = UpdateSkillLevelBody.parse(req.body);
@@ -224,9 +266,10 @@ router.put("/:teamId/skills/:skillId", async (req, res) => {
 
   const overallLevel = calculateOverallLevel(allLevels);
 
+  // Обновляем overallLevel и проставляем время последней оценки
   await db
     .update(teamsTable)
-    .set({ overallLevel })
+    .set({ overallLevel, lastAssessedAt: new Date() })
     .where(eq(teamsTable.id, teamId));
 
   res.json({ teamId, skillId, level: body.level });

@@ -16,6 +16,7 @@
  */
 
 import { drizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import * as schema from "./schema";
 
@@ -29,5 +30,19 @@ if (!process.env.DATABASE_URL) {
 
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 export const db = drizzle(pool, { schema });
+
+/**
+ * Применяет все накопленные SQL-миграции к базе данных.
+ * Вызывается при старте сервера — до seed'а и до открытия HTTP-порта.
+ * Безопасно запускать многократно: drizzle отслеживает применённые миграции
+ * в служебной таблице __drizzle_migrations и пропускает уже выполненные.
+ *
+ * migrationsFolder — путь к папке drizzle/ относительно данного файла.
+ * В dev-режиме это lib/db/drizzle/, в production (esbuild-сборка) —
+ * папка drizzle/ рядом с собранным index.cjs (копируется build-скриптом).
+ */
+export async function runMigrations(migrationsFolder: string): Promise<void> {
+  await migrate(db, { migrationsFolder });
+}
 
 export * from "./schema";
