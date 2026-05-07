@@ -9,344 +9,275 @@
 - Визуализирует профиль зрелости на радарной диаграмме
 - Поддерживает несколько команд с независимыми профилями
 - Позволяет создавать, редактировать, архивировать и восстанавливать команды
-
----
+- Система ролей: viewer, contributor, reviewer, manager, admin
+- Страница метрик компании (Metrics Page) для manager и admin
 
 ## Как устроен проект (монорепозиторий)
 
-Проект использует подход **монорепозитория** — это когда несколько отдельных приложений и библиотек живут в одной папке и управляются вместе.
+Проект использует подход **монорепозитория** с pnpm workspaces — несколько отдельных приложений и библиотек живут в одной папке и управляются вместе.
 
 ```
-qa-maturity-model/
+.
+├── docker-compose.yml           # Postgres + API + Frontend
+├── docker-compose.dev.yml       # + pgAdmin (dev)
+├── Dockerfile.api               # API-сервер build
+├── Dockerfile.web               # Frontend build
+├── pnpm-workspace.yaml          # @workspace/* пакеты
+├── package.json                 # Root workspace
+├── pnpm-lock.yaml               # Зафиксированные версии зависимостей
 ├── artifacts/
-│   ├── api-server/      — Express API-сервер (Node.js + TypeScript)
-│   └── qa-maturity/     — React-приложение (Vite + TypeScript + Tailwind)
+│   ├── api-server/              # Express + Drizzle ORM
+│   │   ├── src/
+│   │   │   ├── routes/          # teams.ts, skills.ts, auth.ts, metrics.ts, users.ts
+│   │   │   ├── middlewares/     # Auth middleware
+│   │   │   ├── lib/seed.ts      # 15 skills + 5 test teams + users
+│   │   │   ├── app.ts           # Express app
+│   │   │   └── index.ts         # Server entry (migrations + seed)
+│   ├── qa-maturity/             # React 19 + Vite + shadcn/ui
+│   │   └── src/
+│   │       ├── components/      # AppLayout, SkillCard, MaturityRadar, modals
+│   │       ├── pages/           # DashboardView, TeamDashboard, MetricsPage, LoginPage
+│   │       ├── contexts/        # AuthContext
+│   │       └── hooks/           # use-toast, etc.
+│   └── mockup-sandbox/          # Песочница для прототипов
 ├── lib/
-│   ├── db/              — схема БД и подключение (Drizzle ORM + PostgreSQL)
-│   ├── api-spec/        — OpenAPI-спецификация и кодогенерация
-│   ├── api-client-react/— сгенерированные React Query хуки для API
-│   └── api-zod/         — сгенерированные Zod-схемы для валидации
-├── scripts/             — вспомогательные скрипты (ручной seed)
-└── pnpm-workspace.yaml  — описание структуры монорепозитория
+│   ├── db/                      # Drizzle schema и миграции
+│   │   ├── src/schema/          # skills.ts, users.ts, index.ts
+│   │   ├── drizzle/             # SQL миграции
+│   │   └── migrations/          # Инициализационные миграции
+│   ├── api-spec/                # OpenAPI spec → codegen
+│   ├── api-zod/                 # Zod схемы для API
+│   └── api-client-react/        # TanStack Query hooks (orval)
+└── scripts/                     # Вспомогательные скрипты
 ```
 
-### Что такое `pnpm-workspace.yaml`
+## Схема базы данных
 
-Этот файл говорит pnpm, **какие папки являются пакетами** внутри монорепозитория. Без него pnpm видел бы только корневой `package.json`. Благодаря этому файлу команды типа `pnpm install` устанавливают зависимости сразу для всех пакетов (api-server, qa-maturity, db и т.д.) одной командой.
+### skills (справочник навыков, 15 записей)
 
-Также в этом файле задан раздел `catalog:` — список версий зависимостей, которые **используются одинаково во всех пакетах** (React, TypeScript, Vite и др.). Это гарантирует, что везде установлена одна и та же версия библиотеки.
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | serial PK | Уникальный ID |
+| `name` | text NOT NULL | Название навыка |
+| `description` | text NOT NULL | Описание |
+| `category` | text NOT NULL | Категория (Test Strategy, Test Design, Test Automation, Quality Metrics, Process) |
+| `level_descriptions` | text[] | Описание уровней [0,1,2,3] |
+| `level_requirements` | text[] | Требования к уровню [0,1,2,3] |
+| `level_artifacts` | text[] | Артефакты для уровня [0,1,2,3] |
+| `level_recommendations` | text[] | Рекомендации по переходу [0,1,2,3] |
 
-### Что такое `@workspace` и `--filter`
+### teams (команды)
 
-Каждый пакет в монорепозитории имеет имя, прописанное в его `package.json`. Например:
-- `lib/db/package.json` → `"name": "@workspace/db"`
-- `artifacts/api-server/package.json` → `"name": "@workspace/api-server"`
-- `artifacts/qa-maturity/package.json` → `"name": "@workspace/qa-maturity"`
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | serial PK | Уникальный ID |
+| `name` | text NOT NULL | Название команды |
+| `description` | text NOT NULL | Описание |
+| `overall_level` | integer DEFAULT 0 | Общий уровень (0-3, auto-calc) |
+| `assessment_status` | text DEFAULT 'planned' | Статус: planned, in_progress, completed, on_hold |
+| `last_assessed_at` | timestamp NULL | Дата последней оценки |
+| `created_at` | timestamp DEFAULT now() | Дата создания |
+| `deleted_at` | timestamp NULL | NULL=активна, дата=архив |
 
-`@workspace` — это просто **префикс-пространство имён** (namespace), принятый в этом проекте. Он не имеет технического смысла сам по себе — это просто соглашение об именовании.
+### team_skill_levels (уровни навыков команды)
 
-Флаг `--filter` указывает pnpm, **в каком именно пакете** нужно выполнить команду. Без него команда выполнялась бы во всех пакетах сразу (или в корне), что вызвало бы ошибку, потому что скрипт `db:push` есть только в пакете `@workspace/db`.
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | serial PK | Уникальный ID |
+| `team_id` | integer FK(teams.id) | Ссылка на команду (CASCADE delete) |
+| `skill_id` | integer FK(skills.id) | Ссылка на навык (CASCADE delete) |
+| `level` | integer DEFAULT 0 | Уровень навыка (0-3) |
 
-Пример: команда
-```bash
-pnpm --filter @workspace/db run db:push
-```
-означает: «зайди в пакет с именем `@workspace/db` (то есть в папку `lib/db/`) и запусти там скрипт `db:push`».
+**При создании команды**: auto-insert 15 записей `team_skill_levels` (все навыки level=0).
 
----
+### team_skill_artifacts (артефакты команды)
 
-## Локальный запуск
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | serial PK | Уникальный ID |
+| `team_id` | integer FK(teams.id) | Ссылка на команду (CASCADE delete) |
+| `skill_id` | integer FK(skills.id) | Ссылка на навык (CASCADE delete) |
+| `name` | text NOT NULL | Название артефакта |
+| `link` | text NULL | Ссылка на артефакт |
+| `note` | text NULL | Заметка |
+| `created_at` | timestamp DEFAULT now() | Дата создания |
 
-### Предварительные требования
+### users (пользователи системы)
 
-| Инструмент | Минимальная версия | Где скачать |
-|---|---|---|
-| Node.js | 20.x LTS или выше | https://nodejs.org |
-| pnpm | 9.x или выше | https://pnpm.io/installation |
-| PostgreSQL | 14 или выше | https://www.postgresql.org/download |
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | serial PK | Уникальный ID |
+| `name` | text NOT NULL | Имя пользователя |
+| `email` | text NOT NULL UNIQUE | Email (логин) |
+| `password_hash` | text NOT NULL | Хеш пароля (bcrypt) |
+| `role` | text DEFAULT 'viewer' | Роль: viewer, contributor, reviewer, manager, admin |
+| `assigned_team_ids` | integer[] DEFAULT [] | Назначенные команды (для contributor/manager) |
+| `is_active` | boolean DEFAULT true | Активен ли пользователь |
+| `created_at` | timestamp DEFAULT now() | Дата создания |
 
----
+**Роли:**
+- **viewer** — только просмотр
+- **contributor** — просмотр + добавление артефактов (только свои команды)
+- **reviewer** — просмотр + изменение уровней + артефакты + статус оценки
+- **manager** — reviewer + страница метрик компании (только свои команды)
+- **admin** — полный доступ, включая управление пользователями и командами
 
-### Установка на macOS
+## Запуск через Docker Compose
 
-#### 1. Node.js
+### 1. Установка Docker Desktop
 
-Рекомендуется через [Homebrew](https://brew.sh):
+| ОС | Ссылка |
+|----|--------|
+| Windows 11 | [Docker Desktop](https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe) |
+| macOS Intel | [Docker.dmg](https://desktop.docker.com/mac/main/amd64/Docker.dmg) |
+| macOS ARM (M1/M2/M3) | [Docker ARM](https://desktop.docker.com/mac/main/arm64/Docker.dmg) |
+| Linux | [Docker Engine](https://docs.docker.com/engine/install/) |
 
-```bash
-# Установить Homebrew (если ещё не установлен)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+Запустите Docker Desktop перед запуском команд.
 
-# Установить Node.js
-brew install node@20
-
-# Проверить установку
-node --version   # ожидается v20.x.x или выше
-npm --version
-```
-
-#### 2. pnpm
-
-```bash
-npm install -g pnpm
-
-# Проверить установку
-pnpm --version   # ожидается 9.x.x или выше
-```
-
-#### 3. PostgreSQL
-
-```bash
-# Установить PostgreSQL через Homebrew
-brew install postgresql@16
-
-# Добавить в PATH (добавьте эту строку в ~/.zshrc или ~/.bash_profile)
-export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
-
-# Применить изменения
-source ~/.zshrc
-
-# Запустить PostgreSQL как фоновый сервис
-brew services start postgresql@16
-
-# Проверить, что сервер запущен
-psql --version
-```
-
-#### 4. Создание базы данных
-
-```bash
-# Подключиться к PostgreSQL под системным пользователем
-psql postgres
-
-# Внутри psql-консоли выполнить:
-CREATE DATABASE qa_maturity;
-CREATE USER qa_user WITH PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE qa_maturity TO qa_user;
-\q
-```
-
----
-
-### Установка на Windows
-
-#### 1. Node.js
-
-1. Перейдите на https://nodejs.org и скачайте установщик LTS (версия 20.x или выше)
-2. Запустите установщик и следуйте инструкциям (все настройки по умолчанию)
-3. Проверьте установку в **PowerShell** или **Командной строке**:
-
-```powershell
-node --version   # ожидается v20.x.x или выше
-npm --version
-```
-
-#### 2. pnpm
-
-```powershell
-npm install -g pnpm
-
-# Проверить установку
-pnpm --version   # ожидается 9.x.x или выше
-```
-
-Если возникает ошибка прав доступа, запустите PowerShell от имени администратора.
-
-#### 3. PostgreSQL
-
-1. Перейдите на https://www.postgresql.org/download/windows/
-2. Скачайте установщик от **EDB** для версии 16.x
-3. Запустите установщик:
-   - Выберите компоненты: **PostgreSQL Server**, **pgAdmin 4**, **Command Line Tools**
-   - Задайте пароль для суперпользователя `postgres` (запомните его!)
-   - Порт: `5432` (по умолчанию)
-   - Завершите установку
-
-4. Добавьте PostgreSQL в PATH:
-   - Откройте: Панель управления → Система → Дополнительные параметры системы → Переменные среды
-   - В переменной `Path` добавьте: `C:\Program Files\PostgreSQL\16\bin`
-
-#### 4. Создание базы данных на Windows
-
-Откройте **PowerShell** или **Командную строку**:
-
-```powershell
-# Подключиться к PostgreSQL
-psql -U postgres
-
-# Внутри psql-консоли выполнить (введите пароль, заданный при установке):
-CREATE DATABASE qa_maturity;
-CREATE USER qa_user WITH PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE qa_maturity TO qa_user;
-\q
-```
-
-Альтернативно можно создать базу через **pgAdmin 4** (графический интерфейс, устанавливается вместе с PostgreSQL).
-
----
-
-### Общие шаги (для обеих ОС)
-
-#### 5. Клонирование репозитория
+### 2. Первый запуск
 
 ```bash
-git clone <URL репозитория>
-cd qa-maturity-model
+docker compose up --build -d
 ```
 
-#### 6. Создание файла переменных окружения
+**Процесс запуска:**
+1. **Postgres** (порт 5432): создаёт БД `qa_maturity`
+2. **API Server** (порт 8080): применяет миграции Drizzle, выполняет seed (15 навыков, 5 тестовых команд, 5 пользователей)
+3. **Frontend** (порт 5173): Vite dev server с proxy `/api` → api-server
 
-В корне проекта создайте файл `.env`:
-
-**macOS / Linux:**
+**Проверка:**
 ```bash
-touch .env
+docker compose ps
+docker compose logs -f api-server
 ```
 
-**Windows (PowerShell):**
-```powershell
-New-Item .env -ItemType File
+Откройте http://localhost:5173 в браузере.
+
+### 3. Dev-режим (с pgAdmin)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
 ```
 
-Заполните `.env` следующим содержимым (замените значения на свои):
+pgAdmin: http://localhost:8081 (логин: admin, пароль: admin)
 
-```env
-# Строка подключения к PostgreSQL
-# Формат: postgresql://пользователь:пароль@хост:порт/имя_базы
-DATABASE_URL=postgresql://qa_user:your_password@localhost:5432/qa_maturity
+### 4. Основные команды
 
-# Порт API-сервера (можно оставить 8080)
-PORT=8080
+```bash
+# Просмотр логов
+docker compose logs -f          # Все логи
+docker compose logs api-server  # Только API
+docker compose logs qa-maturity # Только frontend
+
+# Статус контейнеров
+docker compose ps
+
+# Пересборка и перезапуск
+docker compose up --build -d
+
+# Полная очистка (БД удаляется!)
+docker compose down -v
+
+# Остановить без удаления БД
+docker compose down
 ```
 
-> **Важно:** файл `.env` содержит секреты и **не должен** попадать в git-репозиторий.
-> Убедитесь, что `.env` указан в `.gitignore`.
+### 5. Тестовые учётные данные
 
-#### 7. Установка зависимостей
+После первого запуска доступны пользователи:
+
+| Имя | Email (логин) | Роль |
+|-----|---------------|------|
+| Edward | edward@company.com | admin |
+| Anna | anna@company.com | viewer |
+| Boris | boris@company.com | contributor |
+| Clara | clara@company.com | reviewer |
+| Igor | igor@company.com | manager |
+
+## Локальная разработка (без Docker)
+
+### Требования
+
+- Node.js 20+
+- pnpm 9+
+- PostgreSQL 16+
+
+### Установка
 
 ```bash
 pnpm install
-```
 
-Эта команда устанавливает зависимости **для всех пакетов** монорепозитория сразу (api-server, qa-maturity, db, scripts и т.д.). Запускается один раз из корня проекта.
+# Запуск БД (локально)
+# Создайте БД qa_maturity и пользователя qa_user
 
-#### 8. Создание таблиц в базе данных
+# Переменные окружения
+export DATABASE_URL="postgresql://qa_user:postgres@localhost:5432/qa_maturity?schema=public"
 
-```bash
+# Применение миграций
 pnpm --filter @workspace/db run db:push
-```
 
-Расшифровка команды:
-- `pnpm` — менеджер пакетов
-- `--filter @workspace/db` — выполнить только в пакете `lib/db/` (его имя в package.json — `@workspace/db`)
-- `run db:push` — запустить скрипт `db:push`, который вызывает `drizzle-kit push`
-
-Эта команда сравнивает вашу TypeScript-схему (`lib/db/src/schema/`) с реальной базой данных и создаёт недостающие таблицы:
-- `skills` — справочник QA-навыков (15 записей)
-- `teams` — команды
-- `team_skill_levels` — уровни навыков каждой команды
-
-> **Примечание:** `db:push` применяет схему напрямую, без создания файлов миграций — это удобно для разработки. Для production-окружений с историей изменений используют `db:generate` + `db:migrate`.
-
-#### 9. Заполнение базы тестовыми данными
-
-Начальные данные (15 навыков и 5 тестовых команд) загружаются **автоматически при первом запуске** API-сервера, если база пустая. Дополнительных действий не требуется.
-
-Если нужно запустить seed вручную (например, для сброса данных в пустую базу):
-
-```bash
-pnpm --filter @workspace/scripts run seed
-```
-
-#### 10. Запуск приложения
-
-Нужно запустить два сервиса в **двух отдельных терминалах**:
-
-**Терминал 1 — API-сервер:**
-```bash
+# Запуск API
 pnpm --filter @workspace/api-server run dev
-```
-Сервер запустится на `http://localhost:8080`.
-При первом запуске в логах появится: `Empty database detected — seeding initial data...` — это нормально, данные загружаются автоматически.
 
-**Терминал 2 — Фронтенд (React):**
-```bash
+# Запуск frontend (в другом терминале)
 pnpm --filter @workspace/qa-maturity run dev
 ```
-Приложение откроется на `http://localhost:5173`.
 
-#### 11. Проверка работоспособности
+## Структура API
 
-Откройте в браузере:
-- Фронтенд: `http://localhost:5173`
-- Health-check API: `http://localhost:8080/api/healthz` — должен вернуть `{"status":"ok"}`
-- Список команд: `http://localhost:8080/api/teams`
+API доступно на http://localhost:8080
 
----
+| Endpoint | Метод | Описание |
+|----------|-------|----------|
+| `/api/health` | GET | Проверка здоровья API |
+| `/api/auth/login` | POST | Логин пользователя |
+| `/api/auth/logout` | POST | Выход |
+| `/api/auth/me` | GET | Текущий пользователь |
+| `/api/skills` | GET | Список всех навыков |
+| `/api/teams` | GET | Список команд |
+| `/api/teams/:id` | GET | Детали команды |
+| `/api/teams/:id/skills` | PUT | Обновить уровни навыков |
+| `/api/teams/:id/artifacts` | POST | Добавить артефакт |
+| `/api/metrics` | GET | Метрики компании (manager/admin) |
+| `/api/users` | GET | Список пользователей (admin) |
 
-## Справочник команд
+## Технологии
+
+**Frontend:**
+- React 19 + TypeScript
+- Vite 7
+- shadcn/ui + Tailwind CSS 4
+- TanStack Query (React Query)
+- Wouter (роутинг)
+- Recharts (радарная диаграмма)
+- Framer Motion (анимации)
+
+**Backend:**
+- Node.js 20 + Express 5
+- Drizzle ORM (PostgreSQL)
+- Zod (валидация)
+- bcryptjs (хеширование паролей)
+- express-session (сессии)
+
+**Инфраструктура:**
+- PostgreSQL 16
+- Docker Compose
+- pnpm workspaces (монорепозиторий)
+
+## Вклад в проект
 
 ```bash
-# Установить все зависимости (выполняется из корня проекта)
-pnpm install
+# Создать ветку
+git checkout -b feature/my-feature
 
-# Применить схему БД к базе данных (создать/обновить таблицы без файлов миграций)
-pnpm --filter @workspace/db run db:push
+# Внести изменения, закоммитить
+git commit -m "feat: описание изменений"
 
-# Сгенерировать SQL-файл миграции на основе изменений в схеме
-pnpm --filter @workspace/db run db:generate
-
-# Применить сгенерированные миграции к базе данных
-pnpm --filter @workspace/db run db:migrate
-
-# Открыть визуальный редактор базы данных (Drizzle Studio) в браузере
-pnpm --filter @workspace/db run db:studio
-
-# Запустить seed (заполнение тестовыми данными) вручную
-pnpm --filter @workspace/scripts run seed
-
-# Перегенерировать API-клиент и Zod-схемы из openapi.yaml
-pnpm --filter @workspace/api-spec run generate
-
-# Проверить TypeScript-типы по всему монорепозиторию
-pnpm typecheck
+# Отправить
+git push origin feature/my-feature
 ```
 
----
+## Лицензия
 
-## Частые проблемы
-
-### ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT
-
-**Причина:** скрипт с таким именем отсутствует в `package.json` указанного пакета.
-
-**Решение:** убедитесь, что команда написана точно так, как в этом README. Для проверки доступных скриптов в конкретном пакете выполните:
-```bash
-# Список скриптов пакета db
-cat lib/db/package.json
-```
-
-### "DATABASE_URL must be set"
-
-Убедитесь, что файл `.env` создан в корне проекта и содержит переменную `DATABASE_URL`.
-При запуске через `pnpm ... run dev` файл `.env` подхватывается автоматически.
-
-### "Connection refused" при подключении к PostgreSQL
-
-- **macOS:** проверьте, что служба запущена: `brew services list | grep postgresql`
-- **Windows:** проверьте в **Службах Windows** (services.msc), что служба `postgresql-x64-16` запущена
-
-### Порт уже занят
-
-Если порт 8080 или 5173 занят другим процессом, измените значение в `.env`:
-```env
-PORT=3001
-```
-Или завершите процесс, занимающий порт:
-- macOS/Linux: `lsof -i :8080` → `kill -9 <PID>`
-- Windows: `netstat -ano | findstr :8080` → `taskkill /PID <PID> /F`
-
-### pnpm: команда не найдена
-
-На Windows после установки pnpm может потребоваться перезапуск терминала или перезагрузка.
-Если проблема сохраняется, добавьте папку npm-globals в PATH вручную.
+MIT
