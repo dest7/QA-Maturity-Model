@@ -9,16 +9,16 @@
  *   4. Топ слабых навыков
  */
 
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { BarChart2, Loader2, AlertTriangle, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { BarChart2, Loader2, AlertTriangle, TrendingUp, TrendingDown, Minus, ChevronRight, Network, Building2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-interface TeamRow { id: number; name: string; overallLevel: number; assessmentStatus: string | null; }
+interface TeamRow { id: number; name: string; overallLevel: number; assessmentStatus: string | null; orgUnitId?: number | null; }
 interface SkillHeatmapEntry { skillId: number; skillName: string; category: string; level: number; }
-interface HeatmapTeam { team: { id: number; name: string; overallLevel: number }; skills: SkillHeatmapEntry[]; }
+interface HeatmapTeam { team: { id: number; name: string; overallLevel: number; orgUnitId?: number | null }; skills: SkillHeatmapEntry[]; }
 interface SkillAvg { skillId: number; skillName: string; category: string; avgLevel: number; distribution: number[]; }
 interface MetricsData {
   teams: TeamRow[];
@@ -26,6 +26,138 @@ interface MetricsData {
   skillAverages: SkillAvg[];
   categoryAvgs: { category: string; avgLevel: number }[];
   statusSummary: Record<string, number>;
+}
+
+interface OrgUnitNode {
+  id: number;
+  name: string;
+  description: string | null;
+  parentId: number | null;
+  children: OrgUnitNode[];
+  teamCount: number;
+}
+
+// ─── Org Unit Picker ─────────────────────────────────────────────────────────
+
+function OrgNodeOption({
+  node,
+  selected,
+  onSelect,
+  depth = 0,
+}: {
+  node: OrgUnitNode;
+  selected: number | null;
+  onSelect: (id: number | null) => void;
+  depth?: number;
+}) {
+  const [open, setOpen] = useState(depth < 1);
+  const isSelected = selected === node.id;
+  const Icon = depth === 0 ? Network : Building2;
+
+  return (
+    <div>
+      <div className="flex items-center gap-1" style={{ paddingLeft: `${depth * 14}px` }}>
+        {node.children.length > 0 ? (
+          <button onClick={() => setOpen(!open)} className="shrink-0 p-0.5 text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors">
+            <ChevronRight size={11} className={cn("transition-transform", open && "rotate-90")} />
+          </button>
+        ) : (
+          <span className="w-4 shrink-0" />
+        )}
+        <button
+          onClick={() => onSelect(isSelected ? null : node.id)}
+          className={cn(
+            "flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-left text-sm transition-all",
+            isSelected
+              ? "bg-primary/15 text-primary border border-primary/30"
+              : "hover:bg-sidebar-accent/50 text-sidebar-foreground/70"
+          )}
+        >
+          <Icon size={12} className="shrink-0 opacity-60" />
+          <span className="truncate font-medium text-[12px]">{node.name}</span>
+          <span className="ml-auto text-[10px] text-muted-foreground/40 font-mono shrink-0">{node.teamCount}</span>
+        </button>
+      </div>
+      {open && node.children.length > 0 && (
+        <div>
+          {node.children.map((child) => (
+            <OrgNodeOption key={child.id} node={child} selected={selected} onSelect={onSelect} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrgUnitPicker({
+  orgTree,
+  selectedId,
+  onSelect,
+  selectedName,
+}: {
+  orgTree: OrgUnitNode[];
+  selectedId: number | null;
+  onSelect: (id: number | null) => void;
+  selectedName: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all",
+          selectedId
+            ? "bg-primary/10 border-primary/30 text-primary"
+            : "bg-card/40 border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
+        )}
+      >
+        <Network size={14} />
+        <span className="max-w-[200px] truncate">{selectedName ?? "Все подразделения"}</span>
+        {selectedId && (
+          <X
+            size={13}
+            className="shrink-0 opacity-60 hover:opacity-100"
+            onClick={(e) => { e.stopPropagation(); onSelect(null); setOpen(false); }}
+          />
+        )}
+        <ChevronRight size={13} className={cn("shrink-0 transition-transform", open && "rotate-90")} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.97 }}
+            transition={{ duration: 0.15 }}
+            className="absolute top-full mt-1.5 left-0 z-50 w-72 bg-card border border-border/60 rounded-2xl shadow-2xl shadow-black/30 p-2 max-h-80 overflow-y-auto custom-scrollbar"
+          >
+            <button
+              onClick={() => { onSelect(null); setOpen(false); }}
+              className={cn(
+                "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm mb-1 transition-all",
+                !selectedId ? "bg-primary/10 text-primary border border-primary/20" : "text-muted-foreground hover:bg-sidebar-accent/50"
+              )}
+            >
+              <Network size={13} />
+              <span className="font-medium">Все подразделения</span>
+            </button>
+            <div className="border-t border-border/30 my-1.5" />
+            {orgTree.map((root) => (
+              <OrgNodeOption
+                key={root.id}
+                node={root}
+                selected={selectedId}
+                onSelect={(id) => { onSelect(id); setOpen(false); }}
+                depth={0}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 const LEVEL_COLORS_CELL: Record<number, string> = {
@@ -61,9 +193,22 @@ export function MetricsPage() {
   const [data, setData] = useState<MetricsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [orgTree, setOrgTree] = useState<OrgUnitNode[]>([]);
+  const [selectedOrgUnitId, setSelectedOrgUnitId] = useState<number | null>(null);
 
+  // Загрузка дерева подразделений
   useEffect(() => {
-    fetch(`${BASE}/api/metrics`, { credentials: "include" })
+    fetch(`${BASE}/api/org-units`, { credentials: "include" })
+      .then((r) => r.ok ? r.json() : [])
+      .then(setOrgTree)
+      .catch(() => setOrgTree([]));
+  }, []);
+
+  const loadMetrics = useCallback((orgUnitId: number | null) => {
+    setIsLoading(true);
+    setError(null);
+    const url = orgUnitId ? `${BASE}/api/metrics?orgUnitId=${orgUnitId}` : `${BASE}/api/metrics`;
+    fetch(url, { credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error("Не удалось загрузить метрики");
         return res.json();
@@ -72,6 +217,19 @@ export function MetricsPage() {
       .catch((e) => setError(e.message))
       .finally(() => setIsLoading(false));
   }, []);
+
+  useEffect(() => { loadMetrics(selectedOrgUnitId); }, [selectedOrgUnitId, loadMetrics]);
+
+  // Найти имя выбранного узла для отображения в picker
+  function findNodeName(nodes: OrgUnitNode[], id: number): string | null {
+    for (const n of nodes) {
+      if (n.id === id) return n.name;
+      const found = findNodeName(n.children, id);
+      if (found) return found;
+    }
+    return null;
+  }
+  const selectedOrgName = selectedOrgUnitId ? findNodeName(orgTree, selectedOrgUnitId) : null;
 
   if (isLoading) {
     return (
@@ -102,13 +260,25 @@ export function MetricsPage() {
 
       {/* Заголовок */}
       <div className="mb-10">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-            <BarChart2 size={20} />
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                <BarChart2 size={20} />
+              </div>
+              <h1 className="text-4xl font-extrabold tracking-tight font-display">Company Metrics</h1>
+            </div>
+            <p className="text-muted-foreground text-lg">Сводная аналитика зрелости QA по всем командам</p>
           </div>
-          <h1 className="text-4xl font-extrabold tracking-tight font-display">Company Metrics</h1>
+          {orgTree.length > 0 && (
+            <OrgUnitPicker
+              orgTree={orgTree}
+              selectedId={selectedOrgUnitId}
+              onSelect={setSelectedOrgUnitId}
+              selectedName={selectedOrgName}
+            />
+          )}
         </div>
-        <p className="text-muted-foreground text-lg">Сводная аналитика зрелости QA по всем командам</p>
       </div>
 
       {/* KPI карточки */}

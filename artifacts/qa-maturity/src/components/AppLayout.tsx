@@ -18,12 +18,13 @@ import {
   getGetDeletedTeamsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Target, Layers, Plus, Loader2, BarChart2, Pencil, Trash2, RotateCcw, ChevronDown, ChevronUp, ArchiveX } from "lucide-react";
+import { Target, Plus, Loader2, BarChart2, Trash2, RotateCcw, ChevronDown, ChevronUp, ArchiveX } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { CreateTeamModal } from "@/components/CreateTeamModal";
 import { EditTeamModal } from "@/components/EditTeamModal";
 import { UserMenu } from "@/components/UserMenu";
+import { OrgTree } from "@/components/OrgTree";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -37,13 +38,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-
-const STATUS_DOT: Record<string, string> = {
-  planned:     "bg-slate-400",
-  in_progress: "bg-blue-400",
-  completed:   "bg-emerald-400",
-  on_hold:     "bg-amber-400",
-};
 
 function SidebarContent({ children }: { children: React.ReactNode }) {
   const { data: teams, isLoading } = useGetTeams();
@@ -111,9 +105,9 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
 
-        {/* Список активных команд */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
-          <div className="text-[11px] font-bold text-sidebar-foreground/40 uppercase tracking-widest mb-4 px-2 mt-2 flex items-center gap-2">
+        {/* Список активных команд — сгруппирован по оргструктуре */}
+        <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+          <div className="text-[11px] font-bold text-sidebar-foreground/40 uppercase tracking-widest mb-3 px-2 mt-1 flex items-center gap-2">
             <BarChart2 size={12} /> Active Teams
           </div>
 
@@ -124,65 +118,12 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
           ) : teams?.length === 0 ? (
             <div className="px-2 py-4 text-sm text-muted-foreground text-center">Нет активных команд.</div>
           ) : (
-            teams?.map((team) => {
-              const isActive = match && params?.id === String(team.id);
-              const statusDot = STATUS_DOT[team.assessmentStatus ?? "planned"] ?? "bg-slate-400";
-              return (
-                <div key={team.id} className="relative group/row">
-                  <Link
-                    href={`/team/${team.id}`}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative",
-                      isAdmin ? "pr-16" : "pr-3",
-                      isActive
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                    )}
-                  >
-                    {isActive && (
-                      <motion.div
-                        layoutId="active-indicator"
-                        className="absolute left-0 w-1 h-6 bg-primary rounded-r-full"
-                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                      />
-                    )}
-                    <div className="relative shrink-0">
-                      <Layers size={18} className={cn("transition-colors", isActive ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground/80")} />
-                      <div className={cn("absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-sidebar", statusDot)} />
-                    </div>
-                    <span className="font-medium text-sm truncate flex-1">{team.name}</span>
-                    <span className={cn(
-                      "text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border transition-colors shrink-0",
-                      isActive
-                        ? "bg-background/80 border-border text-foreground shadow-inner"
-                        : "bg-background/30 border-border/40 text-muted-foreground group-hover:bg-background/60"
-                    )}>
-                      L{team.overallLevel}
-                    </span>
-                  </Link>
-
-                  {/* Кнопки управления — только для admin */}
-                  {isAdmin && (
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
-                      <button
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingTeam({ id: team.id, name: team.name, description: team.description }); }}
-                        title="Редактировать"
-                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-background/70 hover:bg-primary/20 hover:text-primary text-muted-foreground border border-border/40 transition-all"
-                      >
-                        <Pencil size={12} />
-                      </button>
-                      <button
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteConfirmId(team.id); }}
-                        title="Архивировать"
-                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-background/70 hover:bg-destructive/20 hover:text-destructive text-muted-foreground border border-border/40 transition-all"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })
+            <OrgTree
+              teams={teams ?? []}
+              isAdmin={isAdmin}
+              onEditTeam={(team) => setEditingTeam({ id: team.id, name: team.name, description: team.description ?? "" })}
+              onDeleteTeam={(id) => setDeleteConfirmId(id)}
+            />
           )}
 
           {/* Архивные команды */}

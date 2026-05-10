@@ -32,6 +32,7 @@ import metricsRouter from "./metrics";
 import teamsRouter from "./teams";
 import skillsRouter from "./skills";
 import artifactsRouter from "./artifacts";
+import orgUnitsRouter from "./org-units";
 
 const router: IRouter = Router();
 
@@ -39,6 +40,7 @@ router.use(healthRouter);
 router.use("/auth", authRouter);
 router.use("/users", usersRouter);
 router.use("/metrics", metricsRouter);
+router.use("/org-units", orgUnitsRouter);
 router.use("/teams", teamsRouter);
 router.use("/teams/:teamId/skills/:skillId/artifacts", artifactsRouter);
 router.use("/skills", skillsRouter);

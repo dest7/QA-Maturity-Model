@@ -1,13 +1,17 @@
 import { Router, type IRouter } from "express";
-import { db, teamsTable, skillsTable, teamSkillLevelsTable } from "@workspace/db";
-import { isNull, eq } from "drizzle-orm";
+import { db, teamsTable, skillsTable, teamSkillLevelsTable, orgUnitsTable } from "@workspace/db";
+import { isNull } from "drizzle-orm";
 import { requireAuth, requireManagerOrAdmin } from "../lib/auth";
+import { z } from "zod/v4";
 
 const router: IRouter = Router();
 
 /**
  * GET /api/metrics — сводная аналитика по всей компании.
  * Доступно только для ролей manager и admin.
+ *
+ * Query params:
+ *   orgUnitId — фильтр по узлу оргструктуры (включая всех потомков)
  *
  * Возвращает:
  *   teams          — список команд с уровнями и статусами
@@ -16,14 +20,38 @@ const router: IRouter = Router();
  *   categoryAvgs   — средний уровень по каждой категории
  *   statusSummary  — количество команд в каждом статусе оценки
  */
-router.get("/", requireAuth, requireManagerOrAdmin, async (_req, res) => {
-  const teams = await db.select().from(teamsTable).where(isNull(teamsTable.deletedAt));
+router.get("/", requireAuth, requireManagerOrAdmin, async (req, res) => {
+  const queryOrgUnitId = req.query.orgUnitId ? z.coerce.number().int().positive().parse(req.query.orgUnitId) : null;
+
+  // Если задан фильтр — BFS по дереву, собираем все узлы-потомки включительно
+  let filteredTeamIds: number[] | null = null;
+  if (queryOrgUnitId !== null) {
+    const allUnits = await db.select().from(orgUnitsTable);
+    const descendantIds = new Set<number>();
+    const queue = [queryOrgUnitId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      descendantIds.add(current);
+      allUnits.filter((u) => u.parentId === current).forEach((u) => queue.push(u.id));
+    }
+    const allActiveTeams = await db.select().from(teamsTable).where(isNull(teamsTable.deletedAt));
+    filteredTeamIds = allActiveTeams
+      .filter((t) => t.orgUnitId !== null && descendantIds.has(t.orgUnitId))
+      .map((t) => t.id);
+  }
+
+  const allTeams = await db.select().from(teamsTable).where(isNull(teamsTable.deletedAt));
+  const teams = filteredTeamIds !== null ? allTeams.filter((t) => filteredTeamIds!.includes(t.id)) : allTeams;
+
   const skills = await db.select().from(skillsTable).orderBy(skillsTable.id);
-  const levels = await db.select().from(teamSkillLevelsTable);
+  const allLevels = await db.select().from(teamSkillLevelsTable);
+  const levels = filteredTeamIds !== null
+    ? allLevels.filter((l) => filteredTeamIds!.includes(l.teamId))
+    : allLevels;
 
   // Heatmap: команда → навыки с уровнями
   const heatmap = teams.map((team) => ({
-    team: { id: team.id, name: team.name, overallLevel: team.overallLevel },
+    team: { id: team.id, name: team.name, overallLevel: team.overallLevel, orgUnitId: team.orgUnitId },
     skills: skills.map((skill) => {
       const entry = levels.find((l) => l.teamId === team.id && l.skillId === skill.id);
       return { skillId: skill.id, skillName: skill.name, category: skill.category, level: entry?.level ?? 0 };

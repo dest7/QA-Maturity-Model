@@ -22,6 +22,13 @@
       "when": 1778110353257,
       "tag": "0002_easy_arclight",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778416792480,
+      "tag": "0003_dazzling_the_enforcers",
+      "breakpoints": true
     }
   ]
 }

@@ -33,6 +33,19 @@ import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+/**
+ * Организационные единицы — рекурсивное дерево произвольной глубины.
+ * parent_id = NULL → корневой узел (Управление).
+ * Команды привязываются к любому узлу через teamsTable.org_unit_id.
+ */
+export const orgUnitsTable = pgTable("org_units", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  parentId: integer("parent_id"), // self-reference; FK добавлен через ALTER TABLE в миграции
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const skillsTable = pgTable("skills", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -49,6 +62,8 @@ export const teamsTable = pgTable("teams", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description").notNull(),
+  // Привязка к узлу организационного дерева (nullable = без структуры)
+  orgUnitId: integer("org_unit_id"),
   // Кэшированное значение общего уровня зрелости; пересчитывается при каждом PUT /skills/:id
   overallLevel: integer("overall_level").notNull().default(0),
   // Статус проведения оценки зрелости

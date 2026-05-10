@@ -219,6 +219,23 @@ router.post("/:teamId/restore", async (req, res) => {
   res.json(restored);
 });
 
+// Назначение команды в узел оргструктуры (admin/manager)
+router.patch("/:teamId/org-unit", async (req, res) => {
+  const { teamId } = GetTeamParams.parse(req.params);
+  const body = z.object({ orgUnitId: z.number().int().positive().nullable() }).parse(req.body);
+
+  const existing = await db.select().from(teamsTable).where(eq(teamsTable.id, teamId));
+  if (existing.length === 0) { res.status(404).json({ error: "Team not found" }); return; }
+
+  const [updated] = await db
+    .update(teamsTable)
+    .set({ orgUnitId: body.orgUnitId })
+    .where(eq(teamsTable.id, teamId))
+    .returning();
+
+  res.json(updated);
+});
+
 // Обновление заметок (notes) по навыку для команды
 router.patch("/:teamId/skills/:skillId/notes", async (req, res) => {
   const { teamId, skillId } = UpdateSkillLevelParams.parse(req.params);

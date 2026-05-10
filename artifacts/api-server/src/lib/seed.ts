@@ -1,35 +1,18 @@
 /**
- * Автоматический seed (заполнение начальными данными) базы данных.
+ * Автоматический seed базы данных.
  *
- * Алгоритм seedIfEmpty():
- * 1. Проверяем наличие хотя бы одной записи в таблице skills (LIMIT 1).
- * 2. Если данные есть — логируем "already seeded" и выходим без изменений (идемпотентность).
- * 3. Если база пустая — вставляем 15 навыков и 5 тестовых команд.
+ * seedIfEmpty()           — заполняет skills если таблица пуста
+ * seedOrgStructureIfEmpty()— создаёт org_units + 30 команд если org_units пуст
+ * seedUsersIfEmpty()      — создаёт 5 тестовых пользователей если таблица пуста
  *
- * Пользователи (seedUsersIfEmpty) вставляются отдельно — это позволяет добавлять
- * их даже если skills/teams уже были засеяны ранее.
- *
- * Seed запускается автоматически при старте API-сервера (вызов в index.ts).
- * Это гарантирует, что продакшен-база заполнится данными при первом деплое,
- * без необходимости вручную запускать скрипты.
- *
- * Структура данных навыков:
- *   Каждый навык имеет 4 уровня зрелости (0–3) и три массива по 4 строки:
- *   - levelRequirements[N]    — что должна выполнять команда для уровня N
- *   - levelArtifacts[N]       — артефакты, доказывающие достижение уровня N
- *   - levelRecommendations[N] — как перейти с уровня N на N+1
- *
- * Тестовые команды созданы с разными профилями уровней для демонстрации:
- *   Team Alpha   — уровень 0 (Initial), большинство навыков 0-1
- *   Team Beta    — уровень 1 (Developing)
- *   Team Gamma   — уровень 2 (Defined)
- *   Team Delta   — уровень 3 (Optimized), почти все навыки на 3
- *   Team Epsilon — смешанный профиль уровень 1-2
+ * Все функции идемпотентны: повторный вызов ничего не дублирует.
  */
 
 import bcrypt from "bcryptjs";
-import { db, skillsTable, teamsTable, teamSkillLevelsTable, usersTable } from "@workspace/db";
-import { isNull } from "drizzle-orm";
+import { db, skillsTable, teamsTable, teamSkillLevelsTable, usersTable, orgUnitsTable } from "@workspace/db";
+import { isNull, eq } from "drizzle-orm";
+
+// ─── Справочник навыков (15 штук) ────────────────────────────────────────────
 
 const SKILLS = [
   {
@@ -469,38 +452,91 @@ const SKILLS = [
   },
 ];
 
-const SAMPLE_TEAMS = [
+// ─── Org структура ────────────────────────────────────────────────────────────
+
+const ORG_STRUCTURE = [
   {
-    name: "Team Alpha",
-    description: "Backend services team — early-stage QA practices",
-    skillLevels: [0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+    name: "Управление продуктовой разработки",
+    description: "Отвечает за продуктовые решения: бэкенд, фронтенд и качество продукта",
+    departments: [
+      {
+        name: "Отдел Backend-разработки",
+        description: "Серверная логика, API, интеграции и безопасность",
+        teams: [
+          { name: "Core API",        description: "Ядро платформы: публичные и внутренние API",            level: 3 },
+          { name: "Data Platform",   description: "Хранение, обработка и доступ к данным",                level: 2 },
+          { name: "Integrations",    description: "Интеграции с внешними сервисами и партнёрами",          level: 2 },
+          { name: "Auth & Security", description: "Аутентификация, авторизация и информационная безопасность", level: 3 },
+          { name: "Payments",        description: "Платёжная инфраструктура и финансовые операции",       level: 2 },
+        ],
+      },
+      {
+        name: "Отдел Frontend-разработки",
+        description: "Пользовательские интерфейсы: веб, мобайл и дизайн-система",
+        teams: [
+          { name: "Web App",         description: "Основное веб-приложение для конечных пользователей",   level: 2 },
+          { name: "Design System",   description: "Единая библиотека компонентов и токены дизайна",       level: 3 },
+          { name: "Mobile Web",      description: "Мобильная версия и PWA-адаптации",                     level: 1 },
+          { name: "Analytics UI",    description: "Дашборды и инструменты визуализации данных",            level: 1 },
+          { name: "Admin Panel",     description: "Внутренние инструменты для операционной команды",      level: 2 },
+        ],
+      },
+      {
+        name: "Отдел QA & Reliability",
+        description: "Качество продукта, автоматизация тестирования и надёжность релизов",
+        teams: [
+          { name: "Automation QA",      description: "Автоматизированное тестирование и фреймворки",       level: 2 },
+          { name: "Performance",        description: "Нагрузочное тестирование и профилирование",          level: 1 },
+          { name: "Release Engineering",description: "Управление релизами и deployment-процессы",          level: 2 },
+          { name: "Monitoring",         description: "Мониторинг, алертинг и SLO",                        level: 1 },
+          { name: "Incident Response",  description: "Управление инцидентами и постмортемы",               level: 1 },
+        ],
+      },
+    ],
   },
   {
-    name: "Team Beta",
-    description: "Frontend product team — developing QA maturity",
-    skillLevels: [1, 1, 1, 2, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0],
-  },
-  {
-    name: "Team Gamma",
-    description: "Platform team — defined QA processes",
-    skillLevels: [2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 1, 2, 1],
-  },
-  {
-    name: "Team Delta",
-    description: "Core infrastructure team — optimized QA practices",
-    skillLevels: [3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3],
-  },
-  {
-    name: "Team Epsilon",
-    description: "Mobile apps team — mixed maturity levels",
-    skillLevels: [2, 1, 2, 2, 2, 1, 2, 2, 1, 2, 1, 1, 2, 1, 0],
+    name: "Управление инфраструктуры и DevOps",
+    description: "Инфраструктура, доставка кода и корпоративная безопасность",
+    departments: [
+      {
+        name: "Отдел Cloud Infrastructure",
+        description: "Облачные ресурсы, сети, хранилища и DR",
+        teams: [
+          { name: "Kubernetes",          description: "Оркестрация контейнеров и платформа k8s",            level: 2 },
+          { name: "Networking",          description: "Сетевая архитектура и балансировка нагрузки",         level: 1 },
+          { name: "Storage & DB",        description: "Управляемые базы данных и объектные хранилища",       level: 2 },
+          { name: "Cost Optimization",   description: "Оптимизация облачных расходов и FinOps",             level: 1 },
+          { name: "DR & Backup",         description: "Disaster recovery и резервное копирование",           level: 1 },
+        ],
+      },
+      {
+        name: "Отдел Developer Experience",
+        description: "Инструменты разработчика, CI/CD и внутренние платформы",
+        teams: [
+          { name: "CI/CD",               description: "Конвейеры сборки, тестирования и доставки",          level: 3 },
+          { name: "Internal Tools",      description: "Внутренние платформы и инструменты автоматизации",   level: 1 },
+          { name: "Developer Portal",    description: "Портал разработчика, документация и onboarding",     level: 1 },
+          { name: "SDK & Libraries",     description: "Клиентские SDK, библиотеки и инструменты интеграции",level: 2 },
+          { name: "Observability",       description: "Трейсинг, логирование и метрики платформы",          level: 2 },
+        ],
+      },
+      {
+        name: "Отдел Security & Compliance",
+        description: "Прикладная безопасность, соответствие требованиям и управление доступом",
+        teams: [
+          { name: "AppSec",              description: "Безопасность приложений и пентестирование",          level: 2 },
+          { name: "Infra Security",      description: "Безопасность инфраструктуры и hardening",            level: 1 },
+          { name: "Compliance",          description: "Соответствие стандартам ISO/SOC2/GDPR",              level: 1 },
+          { name: "Identity & Access",   description: "IAM, SSO и управление привилегированным доступом",   level: 2 },
+          { name: "Threat Intelligence", description: "Мониторинг угроз и аналитика безопасности",         level: 1 },
+        ],
+      },
+    ],
   },
 ];
 
-/**
- * Локальная копия алгоритма расчёта общего уровня (см. основной алгоритм в routes/teams.ts).
- * Нужна здесь, чтобы при создании тестовых команд сразу записать корректный overallLevel.
- */
+// ─── Вспомогательные функции ───────────────────────────────────────────────────
+
 function calculateOverallLevel(levels: number[]): number {
   const total = levels.length;
   if (total === 0) return 0;
@@ -511,25 +547,39 @@ function calculateOverallLevel(levels: number[]): number {
   return 0;
 }
 
-async function seedUsersIfEmpty(): Promise<void> {
+/** Генерирует реалистичный набор уровней навыков для нужного overallLevel */
+function generateSkillLevels(targetLevel: number): number[] {
+  const n = 15;
+  if (targetLevel === 3) {
+    // 13 навыков на 3, 2 на 2 → overallLevel=3
+    return [...Array(13).fill(3), 2, 2];
+  }
+  if (targetLevel === 2) {
+    // 13 навыков на 2, 1 на 3, 1 на 1 → overallLevel=2
+    return [...Array(13).fill(2), 3, 1];
+  }
+  if (targetLevel === 1) {
+    // 13 навыков на 1, 2 на 0 → overallLevel=1
+    return [...Array(13).fill(1), 0, 0];
+  }
+  return Array(n).fill(0);
+}
+
+// ─── Seed functions ───────────────────────────────────────────────────────────
+
+async function seedUsersIfEmpty(assignedTeamIds: number[]): Promise<void> {
   const existingUsers = await db.select().from(usersTable).limit(1);
   if (existingUsers.length > 0) {
     console.log("Users already seeded — skipping.");
     return;
   }
 
-  // Получаем ID командных для назначения Boris и Igor
-  const teams = await db.select().from(teamsTable).where(isNull(teamsTable.deletedAt));
-  const alphaId = teams.find((t) => t.name === "Team Alpha")?.id;
-  const betaId = teams.find((t) => t.name === "Team Beta")?.id;
-  const assignedIds = [alphaId, betaId].filter((id): id is number => id !== undefined);
-
   const users = [
     { name: "Edward",  email: "edward@company.com", password: "Edward",  role: "admin",       assignedTeamIds: [] as number[] },
     { name: "Anna",    email: "anna@company.com",   password: "Anna",    role: "viewer",      assignedTeamIds: [] },
-    { name: "Boris",   email: "boris@company.com",  password: "Boris",   role: "contributor", assignedTeamIds: assignedIds },
+    { name: "Boris",   email: "boris@company.com",  password: "Boris",   role: "contributor", assignedTeamIds: assignedTeamIds.slice(0, 3) },
     { name: "Clara",   email: "clara@company.com",  password: "Clara",   role: "reviewer",    assignedTeamIds: [] },
-    { name: "Igor",    email: "igor@company.com",   password: "Igor",    role: "manager",     assignedTeamIds: assignedIds },
+    { name: "Igor",    email: "igor@company.com",   password: "Igor",    role: "manager",     assignedTeamIds: assignedTeamIds.slice(0, 5) },
   ];
 
   for (const u of users) {
@@ -540,38 +590,83 @@ async function seedUsersIfEmpty(): Promise<void> {
 }
 
 export async function seedIfEmpty(): Promise<void> {
-  // Проверяем наличие данных — достаточно одной записи
-  const existing = await db.select().from(skillsTable).limit(1);
-  if (existing.length > 0) {
-    console.log("Database already seeded — skipping skills/teams.");
+  // Сначала проверяем/заполняем навыки
+  const existingSkills = await db.select().from(skillsTable).limit(1);
+  if (existingSkills.length === 0) {
+    console.log("Empty database — seeding skills...");
+    await db.insert(skillsTable).values(SKILLS);
+    console.log(`  ✓ Inserted ${SKILLS.length} skills`);
   } else {
-    console.log("Empty database detected — seeding initial data...");
-
-    // Вставляем все 15 навыков и получаем обратно ID для связки с командами
-    const insertedSkills = await db.insert(skillsTable).values(SKILLS).returning();
-    console.log(`  ✓ Inserted ${insertedSkills.length} skills`);
-
-    // Создаём каждую тестовую команду и её уровни навыков
-    for (const teamData of SAMPLE_TEAMS) {
-      const overallLevel = calculateOverallLevel(teamData.skillLevels);
-      const [team] = await db
-        .insert(teamsTable)
-        .values({ name: teamData.name, description: teamData.description, overallLevel })
-        .returning();
-
-      await db.insert(teamSkillLevelsTable).values(
-        insertedSkills.map((skill, idx) => ({
-          teamId: team.id,
-          skillId: skill.id,
-          level: teamData.skillLevels[idx] ?? 0,
-        }))
-      );
-      console.log(`  ✓ Created team "${team.name}" (overall level ${overallLevel})`);
-    }
-
-    console.log("Seed complete.");
+    console.log("Database already seeded — skipping skills.");
   }
 
-  // Всегда проверяем и добавляем пользователей, даже если skills уже есть
-  await seedUsersIfEmpty();
+  // Проверяем наличие org_units — если нет, создаём всю структуру заново
+  const existingOrg = await db.select().from(orgUnitsTable).limit(1);
+  if (existingOrg.length > 0) {
+    console.log("Org structure already seeded — skipping teams.");
+    const allTeams = await db.select().from(teamsTable).where(isNull(teamsTable.deletedAt));
+    const teamIds = allTeams.map((t) => t.id);
+    await seedUsersIfEmpty(teamIds);
+    return;
+  }
+
+  console.log("Seeding org structure and teams...");
+
+  // Жёстко удаляем старые тестовые команды (если есть)
+  const oldTeams = await db.select().from(teamsTable);
+  for (const t of oldTeams) {
+    await db.delete(teamsTable).where(eq(teamsTable.id, t.id));
+  }
+  if (oldTeams.length > 0) console.log(`  ✓ Removed ${oldTeams.length} old test teams`);
+
+  const skills = await db.select().from(skillsTable).orderBy(skillsTable.id);
+  const allCreatedTeamIds: number[] = [];
+
+  for (const mgmt of ORG_STRUCTURE) {
+    // Создаём управление (корневой узел)
+    const [mgmtUnit] = await db.insert(orgUnitsTable).values({
+      name: mgmt.name,
+      description: mgmt.description,
+      parentId: null,
+    }).returning();
+    console.log(`  ✓ Created management unit: ${mgmt.name}`);
+
+    for (const dept of mgmt.departments) {
+      // Создаём отдел (дочерний узел)
+      const [deptUnit] = await db.insert(orgUnitsTable).values({
+        name: dept.name,
+        description: dept.description,
+        parentId: mgmtUnit.id,
+      }).returning();
+      console.log(`    ✓ Created department: ${dept.name}`);
+
+      for (const teamDef of dept.teams) {
+        const skillLevels = generateSkillLevels(teamDef.level);
+        const overallLevel = calculateOverallLevel(skillLevels);
+
+        const [team] = await db.insert(teamsTable).values({
+          name: teamDef.name,
+          description: teamDef.description,
+          orgUnitId: deptUnit.id,
+          overallLevel,
+          assessmentStatus: overallLevel >= 2 ? "completed" : overallLevel === 1 ? "in_progress" : "planned",
+        }).returning();
+
+        await db.insert(teamSkillLevelsTable).values(
+          skills.map((skill, idx) => ({
+            teamId: team.id,
+            skillId: skill.id,
+            level: skillLevels[idx] ?? 0,
+          }))
+        );
+
+        allCreatedTeamIds.push(team.id);
+        console.log(`      ✓ Team "${team.name}" L${overallLevel}`);
+      }
+    }
+  }
+
+  console.log(`Seed complete. ${allCreatedTeamIds.length} teams created.`);
+
+  await seedUsersIfEmpty(allCreatedTeamIds);
 }
