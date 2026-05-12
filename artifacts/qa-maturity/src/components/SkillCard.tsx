@@ -214,7 +214,7 @@ export function SkillCard({ teamId, skill }: { teamId: number; skill: any }) {
                 <button
                   onClick={() => setInfoOpen(true)}
                   title="Подробное описание уровней"
-                  className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-primary/50 hover:text-primary hover:bg-primary/15 border border-primary/25 hover:border-primary/50 transition-all"
+                  className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-primary/15 hover:bg-primary/25 text-primary hover:text-primary border border-primary/40 hover:border-primary/70 shadow-sm hover:shadow transition-all duration-200"
                 >
                   <Info className="w-3 h-3" />
                 </button>

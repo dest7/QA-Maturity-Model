@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, teamsTable, skillsTable, teamSkillLevelsTable, orgUnitsTable } from "@workspace/db";
-import { isNull } from "drizzle-orm";
+import { db, teamsTable, skillsTable, teamSkillLevelsTable, orgUnitsTable, teamSkillSnapshotsTable, teamSkillHistoryTable } from "@workspace/db";
+import { isNull, sql, eq, and, gte, lte, lt } from "drizzle-orm";
 import { requireAuth, requireManagerOrAdmin } from "../lib/auth";
 import { z } from "zod/v4";
 
@@ -83,6 +83,183 @@ router.get("/", requireAuth, requireManagerOrAdmin, async (req, res) => {
   }
 
   res.json({ teams, heatmap, skillAverages, categoryAvgs, statusSummary });
+});
+
+/**
+ * GET /api/metrics/history — исторические данные для гистограммы.
+ * Доступно только для ролей manager и admin.
+ *
+ * Query params:
+ *   period — 'week' (7 дней), 'month' (30 дней), 'quarter' (90 дней)
+ *
+ * Возвращает:
+ *   snapshots — массив снимков по дням с распределением команд по уровням
+ *   (гибрид: прошлые дни из snapshots, сегодня из team_skill_history)
+ */
+router.get("/history", requireAuth, requireManagerOrAdmin, async (req, res) => {
+  const periodSchema = z.enum(["week", "month", "quarter", "year"]);
+  const period = periodSchema.parse(req.query.period ?? "week");
+
+  const daysMap = { week: 7, month: 30, quarter: 90, year: 365 };
+  const days = daysMap[period];
+
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - days);
+  const fromDateStr = fromDate.toISOString().split("T")[0];
+  const today = new Date().toISOString().split("T")[0];
+
+  // Получаем все снимки за период (кроме сегодня)
+  const snapshots = await db
+    .select()
+    .from(teamSkillSnapshotsTable)
+    .where(
+      and(
+        gte(teamSkillSnapshotsTable.snapshotDate, fromDateStr),
+        lt(teamSkillSnapshotsTable.snapshotDate, today)
+      )
+    )
+    .orderBy(teamSkillSnapshotsTable.snapshotDate);
+
+  // Получаем сегодняшние изменения из истории
+  const todayHistory = await db
+    .select()
+    .from(teamSkillHistoryTable)
+    .where(gte(teamSkillHistoryTable.changedAt, new Date(today)))
+    .orderBy(teamSkillHistoryTable.changedAt);
+
+  // Получаем все команды для подсчёта
+  const allTeams = await db.select({ id: teamsTable.id }).from(teamsTable).where(isNull(teamsTable.deletedAt));
+
+  // Если есть сегодняшние изменения, получаем текущие уровни всех команд
+  let currentTeamLevels: { teamId: number; skillId: number; level: number }[] = [];
+  if (todayHistory.length > 0) {
+    currentTeamLevels = await db
+      .select({ teamId: teamSkillLevelsTable.teamId, skillId: teamSkillLevelsTable.skillId, level: teamSkillLevelsTable.level })
+      .from(teamSkillLevelsTable);
+  }
+
+  // Группируем по датам
+  const byDate = new Map<string, { teamId: number; skillId: number; level: number }[]>();
+
+  // Добавляем снимки за прошлые дни
+  for (const snapshot of snapshots) {
+    const dateStr = snapshot.snapshotDate;
+    if (!byDate.has(dateStr)) {
+      byDate.set(dateStr, []);
+    }
+    byDate.get(dateStr)!.push({ teamId: snapshot.teamId, skillId: snapshot.skillId, level: snapshot.level });
+  }
+
+  // Добавляем сегодняшнее состояние (агрегируем последние изменения по каждому skill)
+  if (todayHistory.length > 0) {
+    const teamSkillToLevel = new Map<string, number>();
+    for (const h of todayHistory) {
+      const key = `${h.teamId}-${h.skillId}`;
+      teamSkillToLevel.set(key, h.newLevel);
+    }
+
+    const todayData: { teamId: number; skillId: number; level: number }[] = [];
+    for (const [key, level] of teamSkillToLevel.entries()) {
+      const [teamId, skillId] = key.split('-').map(Number);
+      todayData.push({ teamId, skillId, level });
+    }
+
+    if (todayData.length > 0) {
+      byDate.set(today, todayData);
+    }
+  }
+
+  // Формируем результат
+  const result = [];
+  for (const [dateStr, data] of byDate.entries()) {
+    // Группируем по командам и считаем средний уровень каждой
+    const teamLevels = new Map<number, number[]>();
+    for (const item of data) {
+      if (!teamLevels.has(item.teamId)) {
+        teamLevels.set(item.teamId, []);
+      }
+      teamLevels.get(item.teamId)!.push(item.level);
+    }
+
+    // teamDistribution: сколько команд на каждом уровне (0/1/2/3)
+    const teamDistribution = { 0: 0, 1: 0, 2: 0, 3: 0 };
+    for (const [teamId, levels] of teamLevels.entries()) {
+      const avgLevel = levels.reduce((a, b) => a + b, 0) / levels.length;
+      const roundedLevel = Math.round(avgLevel);
+      teamDistribution[roundedLevel as keyof typeof teamDistribution]++;
+    }
+
+    // skillDistribution: сколько всего навыков на каждом уровне (0/1/2/3)
+    const skillDistribution = { 0: 0, 1: 0, 2: 0, 3: 0 };
+    for (const item of data) {
+      skillDistribution[item.level as keyof typeof skillDistribution]++;
+    }
+
+    result.push({
+      date: dateStr,
+      teamDistribution,
+      skillDistribution,
+    });
+  }
+
+  // Сортируем по дате
+  result.sort((a, b) => a.date.localeCompare(b.date));
+
+  res.json({ period, days, snapshots: result });
+});
+
+/**
+ * POST /api/metrics/snapshot — создать снимок уровней навыков вручную.
+ * Доступно только для ролей manager и admin.
+ *
+ * Проверяет, не был ли уже создан снимок сегодня.
+ * Если нет — создаёт снимок всех активных команд.
+ */
+router.post("/snapshot", requireAuth, requireManagerOrAdmin, async (req, res) => {
+  const today = new Date().toISOString().split("T")[0];
+
+  // Проверяем, есть ли уже снимки за сегодня
+  const existingSnapshots = await db
+    .select({ id: teamSkillSnapshotsTable.id })
+    .from(teamSkillSnapshotsTable)
+    .where(eq(teamSkillSnapshotsTable.snapshotDate, today))
+    .limit(1);
+
+  if (existingSnapshots.length > 0) {
+    return res.status(409).json({ error: "Снимок за сегодня уже создан", date: today });
+  }
+
+  // Получаем все активные команды
+  const teams = await db.select({ id: teamsTable.id }).from(teamsTable).where(isNull(teamsTable.deletedAt));
+
+  // Получаем текущие уровни навыков
+  const allLevels = await db.select().from(teamSkillLevelsTable);
+
+  // Создаём снимки
+  const snapshotsToInsert = [];
+  for (const team of teams) {
+    const teamLevels = allLevels.filter(l => l.teamId === team.id);
+    for (const level of teamLevels) {
+      snapshotsToInsert.push({
+        teamId: team.id,
+        skillId: level.skillId,
+        level: level.level,
+        snapshotDate: today,
+      });
+    }
+  }
+
+  // Вставляем батчем
+  if (snapshotsToInsert.length > 0) {
+    await db.insert(teamSkillSnapshotsTable).values(snapshotsToInsert);
+  }
+
+  res.json({ 
+    success: true, 
+    message: `Создано ${snapshotsToInsert.length} записей снимка`, 
+    date: today,
+    teamCount: teams.length,
+  });
 });
 
 export default router;

@@ -1,6 +1,6 @@
 FROM node:20-slim
 
-RUN apt-get update && apt-get install -y git python3 make g++ build-essential && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git python3 make g++ build-essential cron && rm -rf /var/lib/apt/lists/*
 
 # Pin pnpm to v9 — compatible with lockfileVersion '9.0'
 RUN npm config set strict-ssl false && npm install -g pnpm@9
@@ -14,7 +14,12 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 # Rebuild native modules for the container platform
 RUN pnpm rebuild
 
+# Setup cron job for daily snapshot at midnight Moscow time (UTC+3)
+COPY scripts/crontab /etc/cron.d/api-snapshot
+RUN chmod 0644 /etc/cron.d/api-snapshot && crontab /etc/cron.d/api-snapshot
+
 EXPOSE 8080
 
-CMD ["pnpm", "--filter", "@workspace/api-server", "run", "dev"]
+# Start both API server and cron daemon
+CMD ["sh", "-c", "cron && pnpm --filter @workspace/api-server run dev"]
 

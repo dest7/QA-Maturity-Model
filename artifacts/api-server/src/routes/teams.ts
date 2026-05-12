@@ -30,7 +30,7 @@
 
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { teamsTable, skillsTable, teamSkillLevelsTable } from "@workspace/db";
+import { teamsTable, skillsTable, teamSkillLevelsTable, teamSkillHistoryTable } from "@workspace/db";
 import { eq, and, isNull, isNotNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
@@ -254,7 +254,7 @@ router.put("/:teamId/skills/:skillId", async (req, res) => {
   const { teamId, skillId } = UpdateSkillLevelParams.parse(req.params);
   const body = UpdateSkillLevelBody.parse(req.body);
 
-  // Upsert: вставляем запись, если её нет, иначе обновляем
+  // Получаем текущий уровень для записи в историю
   const existing = await db
     .select()
     .from(teamSkillLevelsTable)
@@ -262,6 +262,9 @@ router.put("/:teamId/skills/:skillId", async (req, res) => {
       and(eq(teamSkillLevelsTable.teamId, teamId), eq(teamSkillLevelsTable.skillId, skillId))
     );
 
+  const oldLevel = existing.length > 0 ? existing[0].level : null;
+
+  // Upsert: вставляем запись, если её нет, иначе обновляем
   if (existing.length === 0) {
     await db
       .insert(teamSkillLevelsTable)
@@ -274,6 +277,17 @@ router.put("/:teamId/skills/:skillId", async (req, res) => {
         and(eq(teamSkillLevelsTable.teamId, teamId), eq(teamSkillLevelsTable.skillId, skillId))
       );
   }
+
+  // Записываем в историю изменений
+  await db
+    .insert(teamSkillHistoryTable)
+    .values({
+      teamId,
+      skillId,
+      oldLevel,
+      newLevel: body.level,
+      changedByUserId: req.session.userId ?? null,
+    });
 
   // Пересчитываем и сохраняем общий уровень зрелости команды
   const allLevels = await db

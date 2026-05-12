@@ -29,7 +29,7 @@
  *    эта таблица хранит *что реально есть*: ссылки, документы, заметки.
  */
 
-import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, date, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -93,9 +93,44 @@ export const teamSkillArtifactsTable = pgTable("team_skill_artifacts", {
   name: text("name").notNull(),
   // Ссылка на артефакт (URL, путь к документу и т.д.)
   link: text("link"),
-  // Дополнительные заметки
+  // Дополнительных заметки
   note: text("note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * team_skill_snapshots — ежедневные снимки уровней навыков команд.
+ * Создаются автоматически раз в день (cron) или вручную по кнопке.
+ * Используется для построения гистограмм динамики зрелости за период.
+ * UNIQUE (team_id, skill_id, snapshot_date) гарантирует не более 1 снимка в день.
+ */
+export const teamSkillSnapshotsTable = pgTable("team_skill_snapshots", {
+  id: serial("id").primaryKey(),
+  teamId: integer("team_id").notNull().references(() => teamsTable.id, { onDelete: "cascade" }),
+  skillId: integer("skill_id").notNull().references(() => skillsTable.id, { onDelete: "cascade" }),
+  level: integer("level").notNull(),
+  snapshotDate: date("snapshot_date").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("team_skill_snapshots_unique").on(table.teamId, table.skillId, table.snapshotDate),
+]);
+
+/**
+ * team_skill_history — лог изменений уровней навыков.
+ * Каждая запись фиксирует факт изменения: кто, когда, старый/новый уровень.
+ * Используется для:
+ *   - аудита изменений (кто изменил уровень)
+ *   - онлайн-аналитики (сегодняшние изменения)
+ *   - отладки и расследования инцидентов
+ */
+export const teamSkillHistoryTable = pgTable("team_skill_history", {
+  id: serial("id").primaryKey(),
+  teamId: integer("team_id").notNull().references(() => teamsTable.id, { onDelete: "cascade" }),
+  skillId: integer("skill_id").notNull().references(() => skillsTable.id, { onDelete: "cascade" }),
+  oldLevel: integer("old_level"),
+  newLevel: integer("new_level").notNull(),
+  changedAt: timestamp("changed_at").defaultNow().notNull(),
+  changedByUserId: integer("changed_by_user_id"), // FK к users будет добавлен через миграцию
 });
 
 // Zod-схемы для валидации входных данных (omit исключает поля, заполняемые сервером)
@@ -103,13 +138,19 @@ export const insertSkillSchema = createInsertSchema(skillsTable).omit({ id: true
 export const insertTeamSchema = createInsertSchema(teamsTable).omit({ id: true, createdAt: true, overallLevel: true, lastAssessedAt: true });
 export const insertTeamSkillLevelSchema = createInsertSchema(teamSkillLevelsTable).omit({ id: true });
 export const insertTeamSkillArtifactSchema = createInsertSchema(teamSkillArtifactsTable).omit({ id: true, createdAt: true });
+export const insertTeamSkillSnapshotSchema = createInsertSchema(teamSkillSnapshotsTable).omit({ id: true, createdAt: true });
+export const insertTeamSkillHistorySchema = createInsertSchema(teamSkillHistoryTable).omit({ id: true, changedAt: true });
 
 // TypeScript-типы, выведенные автоматически из схемы таблиц
 export type Skill = typeof skillsTable.$inferSelect;
 export type Team = typeof teamsTable.$inferSelect;
 export type TeamSkillLevel = typeof teamSkillLevelsTable.$inferSelect;
 export type TeamSkillArtifact = typeof teamSkillArtifactsTable.$inferSelect;
+export type TeamSkillSnapshot = typeof teamSkillSnapshotsTable.$inferSelect;
+export type TeamSkillHistory = typeof teamSkillHistoryTable.$inferSelect;
 export type InsertSkill = z.infer<typeof insertSkillSchema>;
 export type InsertTeam = z.infer<typeof insertTeamSchema>;
 export type InsertTeamSkillLevel = z.infer<typeof insertTeamSkillLevelSchema>;
 export type InsertTeamSkillArtifact = z.infer<typeof insertTeamSkillArtifactSchema>;
+export type InsertTeamSkillSnapshot = z.infer<typeof insertTeamSkillSnapshotSchema>;
+export type InsertTeamSkillHistory = z.infer<typeof insertTeamSkillHistorySchema>;

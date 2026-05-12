@@ -75,7 +75,7 @@ function TeamRow({ team, isAdmin, depth, onEdit, onDelete }: TeamRowProps) {
           <Layers size={15} className={cn("transition-colors", isActive ? "text-primary" : "text-muted-foreground/60")} />
           <div className={cn("absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-sidebar", statusDot)} />
         </div>
-        <span className="font-medium text-[13px] truncate flex-1">{team.name}</span>
+        <span className="font-medium text-[13px] break-words flex-1">{team.name}</span>
         <span className={cn(
           "text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full border shrink-0",
           isActive ? "bg-background/80 border-border text-foreground" : "bg-background/30 border-border/40 text-muted-foreground"
@@ -123,7 +123,7 @@ function OrgNode({ node, teams, isAdmin, depth = 0, onEdit, onDelete, defaultOpe
         <ChevronRight size={11} className={cn("shrink-0 text-muted-foreground/40 transition-transform duration-200", open && "rotate-90")} />
         <Icon size={12} className={cn("shrink-0", depth === 0 ? "text-primary/60" : "text-muted-foreground/50")} />
         <span className={cn(
-          "font-semibold truncate flex-1",
+          "font-semibold flex-1 break-words",
           depth === 0 ? "text-[11px] text-sidebar-foreground/70 uppercase tracking-wider" : "text-[11px] text-sidebar-foreground/55"
         )}>
           {node.name}
