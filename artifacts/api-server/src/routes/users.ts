@@ -25,15 +25,17 @@ router.patch("/:id", requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const { role, assignedTeamIds, isActive, password } = req.body as {
+  const body = req.body as {
     role?: string;
     assignedTeamIds?: number[];
     isActive?: boolean;
     password?: string;
   };
 
+  const { role, assignedTeamIds, isActive, password } = body;
+
   const updates: Record<string, unknown> = {};
-  if (role !== undefined) updates.role = role;
+  if (role !== undefined) updates.role = typeof role === "string" ? role : undefined;
   if (assignedTeamIds !== undefined) updates.assignedTeamIds = assignedTeamIds;
   if (isActive !== undefined) updates.isActive = isActive;
   if (password) updates.passwordHash = await bcrypt.hash(password, 10);

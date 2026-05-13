@@ -109,9 +109,19 @@ interface OrgNodeProps {
   defaultOpen?: boolean;
 }
 
+/**
+ * Подсчитывает общее количество команд в узле и всех его дочерних узлах
+ */
+function countTeamsInSubtree(node: OrgUnitNode, teams: Team[]): number {
+  const directTeams = teams.filter((t) => t.orgUnitId === node.id).length;
+  const childTeams = node.children.reduce((sum, child) => sum + countTeamsInSubtree(child, teams), 0);
+  return directTeams + childTeams;
+}
+
 function OrgNode({ node, teams, isAdmin, depth = 0, onEdit, onDelete, onAddOrgUnit, onEditOrgUnit, onDeleteOrgUnit, defaultOpen = false }: OrgNodeProps) {
   const [open, setOpen] = useState(defaultOpen);
   const nodeTeams = teams.filter((t) => t.orgUnitId === node.id);
+  const totalTeamsInSubtree = countTeamsInSubtree(node, teams);
   const hasContent = node.children.length > 0 || nodeTeams.length > 0;
   const Icon = depth === 0 ? Network : Building2;
 
@@ -147,7 +157,7 @@ function OrgNode({ node, teams, isAdmin, depth = 0, onEdit, onDelete, onAddOrgUn
             {node.name}
           </span>
           {hasContent && (
-            <span className="text-[9px] text-muted-foreground/30 shrink-0 font-mono">{nodeTeams.length}</span>
+            <span className="text-[9px] text-muted-foreground/30 shrink-0 font-mono">{totalTeamsInSubtree}</span>
           )}
         </button>
 

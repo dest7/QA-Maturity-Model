@@ -314,6 +314,78 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /org-units:
+    get:
+      operationId: getOrgUnits
+      tags: [org-units]
+      summary: Get organizational units tree
+      responses:
+        "200":
+          description: Organizational units tree
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrgUnitNode"
+    post:
+      operationId: createOrgUnit
+      tags: [org-units]
+      summary: Create organizational unit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrgUnitRequest"
+      responses:
+        "201":
+          description: Created organizational unit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgUnitNode"
+  /org-units/{id}:
+    put:
+      operationId: updateOrgUnit
+      tags: [org-units]
+      summary: Update organizational unit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOrgUnitRequest"
+      responses:
+        "200":
+          description: Updated organizational unit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgUnitNode"
+    delete:
+      operationId: deleteOrgUnit
+      tags: [org-units]
+      summary: Delete organizational unit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
   /skills:
     get:
       operationId: getSkills
@@ -382,6 +454,10 @@ components:
           type: string
         description:
           type: string
+        criticality:
+          type: string
+          enum: [MC, BC+, BC, BO, OP]
+          default: BC
         overallLevel:
           type: integer
         assessmentStatus:
@@ -523,6 +599,17 @@ components:
           type: string
         description:
           type: string
+        orgUnitId:
+          type: integer
+          nullable: true
+        criticality:
+          type: string
+          enum: [MC, BC+, BC, BO, OP]
+          default: BC
+        teamType:
+          type: string
+          enum: [product, platform, service]
+          default: service
       required:
         - name
         - description
@@ -533,6 +620,15 @@ components:
           type: string
         description:
           type: string
+        orgUnitId:
+          type: integer
+          nullable: true
+        criticality:
+          type: string
+          enum: [MC, BC+, BC, BO, OP]
+        teamType:
+          type: string
+          enum: [product, platform, service]
       required:
         - name
         - description
@@ -566,6 +662,54 @@ components:
           nullable: true
       required:
         - name
+    OrgUnitNode:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        parentId:
+          type: integer
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrgUnitNode"
+        teamCount:
+          type: integer
+      required:
+        - id
+        - name
+        - children
+        - teamCount
+    CreateOrgUnitRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        parentId:
+          type: integer
+          nullable: true
+      required:
+        - name
+    UpdateOrgUnitRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        parentId:
+          type: integer
+          nullable: true
     ErrorResponse:
       type: object
       properties:

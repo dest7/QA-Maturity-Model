@@ -59,6 +59,7 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
   const canCreate = canCreateTeam();
   const showMetrics = canViewMetrics();
 
+  const [location] = useLocation();
   const [editingTeam, setEditingTeam] = useState<{ id: number; name: string; description: string; orgUnitId?: number | null } | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -270,6 +271,18 @@ const teamToDelete = Array.isArray(teams) ? teams.find((t) => t.id === deleteCon
                 )}
                 <BarChart2 size={18} className={cn("transition-colors", metricsMatch ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground/80")} />
                 <span className="font-medium text-sm">Company Metrics</span>
+              </Link>
+              <Link
+                href="/analytics/teams"
+                className={cn(
+                  "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative mt-1",
+                  location.startsWith("/analytics")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                )}
+              >
+                <BarChart2 size={18} className={cn("transition-colors", location.startsWith("/analytics") ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground/80")} />
+                <span className="font-medium text-sm">Extended Analytics</span>
               </Link>
             </div>
           )}

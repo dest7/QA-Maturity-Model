@@ -1,0 +1,3 @@
+-- No schema change needed, criticality column already exists
+-- This migration is for documentation purposes only
+-- New criticality values (BO, OP) are now available in the application

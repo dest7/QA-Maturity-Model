@@ -64,6 +64,10 @@ export const teamsTable = pgTable("teams", {
   description: text("description").notNull(),
   // Привязка к узлу организационного дерева (nullable = без структуры)
   orgUnitId: integer("org_unit_id"),
+  // Критичность команды: MC (Mission Critical), BC+ (Business Critical Plus), BC (Business Critical), BO (Business Operational), OP (Operational Support)
+  criticality: text("criticality").notNull().default("BC"),
+  // Тип команды: product (продуктовая), platform (платформенная), service (сервисная)
+  teamType: text("team_type").notNull().default("service"),
   // Кэшированное значение общего уровня зрелости; пересчитывается при каждом PUT /skills/:id
   overallLevel: integer("overall_level").notNull().default(0),
   // Статус проведения оценки зрелости
@@ -135,8 +139,10 @@ export const teamSkillHistoryTable = pgTable("team_skill_history", {
 
 // Zod-схемы для валидации входных данных (omit исключает поля, заполняемые сервером)
 export const insertSkillSchema = createInsertSchema(skillsTable).omit({ id: true });
-export const insertTeamSchema = createInsertSchema(teamsTable).omit({ id: true, createdAt: true, overallLevel: true, lastAssessedAt: true }).extend({
+export const insertTeamSchema = createInsertSchema(teamsTable).omit({ id: true, createdAt: true, overallLevel: true, lastAssessedAt: true, teamType: true }).extend({
   orgUnitId: z.number().int().positive().nullable().optional(),
+  criticality: z.enum(["MC", "BC+", "BC", "BO", "OP"]).optional().default("BC"),
+  teamType: z.enum(["product", "platform", "service"]).optional().default("service"),
 });
 export const insertTeamSkillLevelSchema = createInsertSchema(teamSkillLevelsTable).omit({ id: true });
 export const insertTeamSkillArtifactSchema = createInsertSchema(teamSkillArtifactsTable).omit({ id: true, createdAt: true });

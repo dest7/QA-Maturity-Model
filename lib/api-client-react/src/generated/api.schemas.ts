@@ -20,6 +20,17 @@ export interface Skill {
   levelRecommendations: string[];
 }
 
+export type TeamCriticality =
+  (typeof TeamCriticality)[keyof typeof TeamCriticality];
+
+export const TeamCriticality = {
+  MC: "MC",
+  "BC+": "BC+",
+  BC: "BC",
+  BO: "BO",
+  OP: "OP",
+} as const;
+
 export type TeamAssessmentStatus =
   (typeof TeamAssessmentStatus)[keyof typeof TeamAssessmentStatus];
 
@@ -34,6 +45,7 @@ export interface Team {
   id: number;
   name: string;
   description: string;
+  criticality?: TeamCriticality;
   overallLevel: number;
   assessmentStatus: TeamAssessmentStatus;
   lastAssessedAt?: string | null;
@@ -90,14 +102,60 @@ export interface Artifact {
   createdAt: string;
 }
 
+export type CreateTeamRequestCriticality =
+  (typeof CreateTeamRequestCriticality)[keyof typeof CreateTeamRequestCriticality];
+
+export const CreateTeamRequestCriticality = {
+  MC: "MC",
+  "BC+": "BC+",
+  BC: "BC",
+  BO: "BO",
+  OP: "OP",
+} as const;
+
+export type CreateTeamRequestTeamType =
+  (typeof CreateTeamRequestTeamType)[keyof typeof CreateTeamRequestTeamType];
+
+export const CreateTeamRequestTeamType = {
+  product: "product",
+  platform: "platform",
+  service: "service",
+} as const;
+
 export interface CreateTeamRequest {
   name: string;
   description: string;
+  orgUnitId?: number | null;
+  criticality?: CreateTeamRequestCriticality;
+  teamType?: CreateTeamRequestTeamType;
 }
+
+export type UpdateTeamRequestCriticality =
+  (typeof UpdateTeamRequestCriticality)[keyof typeof UpdateTeamRequestCriticality];
+
+export const UpdateTeamRequestCriticality = {
+  MC: "MC",
+  "BC+": "BC+",
+  BC: "BC",
+  BO: "BO",
+  OP: "OP",
+} as const;
+
+export type UpdateTeamRequestTeamType =
+  (typeof UpdateTeamRequestTeamType)[keyof typeof UpdateTeamRequestTeamType];
+
+export const UpdateTeamRequestTeamType = {
+  product: "product",
+  platform: "platform",
+  service: "service",
+} as const;
 
 export interface UpdateTeamRequest {
   name: string;
   description: string;
+  orgUnitId?: number | null;
+  criticality?: UpdateTeamRequestCriticality;
+  teamType?: UpdateTeamRequestTeamType;
 }
 
 export type UpdateTeamStatusRequestAssessmentStatus =
@@ -128,27 +186,11 @@ export interface CreateArtifactRequest {
   note?: string | null;
 }
 
-export interface ErrorResponse {
-  error: string;
-}
-
-export interface SuccessResponse {
-  success: boolean;
-}
-
-export interface OrgUnit {
-  id: number;
-  name: string;
-  description: string | null;
-  parentId: number | null;
-  createdAt: string;
-}
-
 export interface OrgUnitNode {
   id: number;
   name: string;
-  description: string | null;
-  parentId: number | null;
+  description?: string | null;
+  parentId?: number | null;
   children: OrgUnitNode[];
   teamCount: number;
 }
@@ -163,4 +205,12 @@ export interface UpdateOrgUnitRequest {
   name?: string;
   description?: string | null;
   parentId?: number | null;
+}
+
+export interface ErrorResponse {
+  error: string;
+}
+
+export interface SuccessResponse {
+  success: boolean;
 }

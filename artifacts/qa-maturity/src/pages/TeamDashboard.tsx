@@ -9,7 +9,7 @@ import { useGetTeam, useUpdateTeamStatus, getGetTeamQueryKey, getGetTeamsQueryKe
 import { useQueryClient } from "@tanstack/react-query";
 import { MaturityRadar } from "@/components/MaturityRadar";
 import { SkillCard } from "@/components/SkillCard";
-import { Loader2, Info, CalendarClock, ChevronDown } from "lucide-react";
+import { Loader2, Info, CalendarClock, ChevronDown, Shield } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,6 +30,20 @@ const getMaturityConfig = (level: number) => {
     case 3: return { label: "Level 3: Optimized",  color: "text-emerald-500 border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.15)]" };
     default: return { label: "Unknown",            color: "text-slate-400  border-slate-500/30  bg-slate-500/10" };
   }
+};
+
+const CRITICALITY_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; shadow: string }> = {
+  "MC": { label: "MC", color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/30", shadow: "shadow-[0_0_15px_rgba(239,68,68,0.15)]" },
+  "BC+": { label: "BC+", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30", shadow: "shadow-[0_0_15px_rgba(245,158,11,0.15)]" },
+  "BC": { label: "BC", color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/30", shadow: "shadow-[0_0_15px_rgba(59,130,246,0.15)]" },
+  "BO": { label: "BO", color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", shadow: "shadow-[0_0_15px_rgba(16,185,129,0.15)]" },
+  "OP": { label: "OP", color: "text-slate-400", bg: "bg-slate-500/10", border: "border-slate-500/30", shadow: "shadow-[0_0_15px_rgba(100,116,139,0.15)]" },
+};
+
+const TEAM_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: string }> = {
+  "product": { label: "Продуктовая", color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/30", icon: "🎯" },
+  "platform": { label: "Платформенная", color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/30", icon: "🔧" },
+  "service": { label: "Сервисная", color: "text-slate-400", bg: "bg-slate-500/10", border: "border-slate-500/30", icon: "🛠️" },
 };
 
 const ASSESSMENT_STATUSES = [
@@ -89,6 +103,7 @@ export function TeamDashboard({ teamId }: { teamId: number }) {
 
   const badgeConfig = getMaturityConfig(team.overallLevel);
   const statusConfig = getStatusConfig(team.assessmentStatus ?? "planned");
+  const criticalityConfig = CRITICALITY_CONFIG[team.criticality ?? "BC"];
 
   const lastAssessedText = team.lastAssessedAt
     ? formatDistanceToNow(new Date(team.lastAssessedAt), { addSuffix: true, locale: ru })
@@ -146,8 +161,21 @@ export function TeamDashboard({ teamId }: { teamId: number }) {
           </div>
         </div>
 
-        <div className={cn("px-5 py-2.5 rounded-full border-2 font-bold tracking-wide flex items-center shrink-0", badgeConfig.color)}>
-          {badgeConfig.label}
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Уровень зрелости */}
+          <div className={cn("px-5 py-2.5 rounded-full border-2 font-bold tracking-wide flex items-center", badgeConfig.color)}>
+            {badgeConfig.label}
+          </div>
+          {/* Уровень критичности */}
+          <div className={cn("px-4 py-2 rounded-full border font-bold tracking-wide flex items-center gap-1.5", criticalityConfig.color, criticalityConfig.bg, criticalityConfig.border, criticalityConfig.shadow)}>
+            <Shield size={14} />
+            {criticalityConfig.label}
+          </div>
+          {/* Тип команды */}
+          <div className={cn("px-4 py-2 rounded-full border font-bold tracking-wide flex items-center gap-1.5", TEAM_TYPE_CONFIG[team.teamType ?? "service"].color, TEAM_TYPE_CONFIG[team.teamType ?? "service"].bg, TEAM_TYPE_CONFIG[team.teamType ?? "service"].border)}>
+            <span>{TEAM_TYPE_CONFIG[team.teamType ?? "service"].icon}</span>
+            {TEAM_TYPE_CONFIG[team.teamType ?? "service"].label}
+          </div>
         </div>
       </div>
 

@@ -6,11 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TeamAssessmentStatus } from "./teamAssessmentStatus";
+import type { TeamCriticality } from "./teamCriticality";
 
 export interface Team {
   id: number;
   name: string;
   description: string;
+  criticality?: TeamCriticality;
   overallLevel: number;
   assessmentStatus: TeamAssessmentStatus;
   lastAssessedAt?: Date | null;

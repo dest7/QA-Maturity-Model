@@ -98,6 +98,8 @@ router.post("/", async (req, res) => {
       name: body.name,
       description: body.description,
       orgUnitId: body.orgUnitId ?? null,
+      criticality: body.criticality ?? "BC",
+      teamType: body.teamType ?? "service",
       overallLevel: 0,
       assessmentStatus: "planned",
     })
@@ -156,10 +158,12 @@ router.put("/:teamId", async (req, res) => {
 
   const [updated] = await db
     .update(teamsTable)
-    .set({ 
-      name: body.name, 
+    .set({
+      name: body.name,
       description: body.description,
       orgUnitId: body.orgUnitId ?? null,
+      criticality: body.criticality ?? existing[0].criticality,
+      teamType: body.teamType ?? existing[0].teamType,
     })
     .where(eq(teamsTable.id, teamId))
     .returning();

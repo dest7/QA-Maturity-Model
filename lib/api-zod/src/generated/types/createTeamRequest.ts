@@ -5,8 +5,13 @@
  * QA Maturity Model API
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateTeamRequestCriticality } from "./createTeamRequestCriticality";
+import type { CreateTeamRequestTeamType } from "./createTeamRequestTeamType";
 
 export interface CreateTeamRequest {
   name: string;
   description: string;
+  orgUnitId?: number | null;
+  criticality?: CreateTeamRequestCriticality;
+  teamType?: CreateTeamRequestTeamType;
 }

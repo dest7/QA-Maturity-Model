@@ -18,11 +18,15 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary Get all teams
  */
+export const getTeamsResponseCriticalityDefault = `BC`;
+
 export const GetTeamsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
   description: zod.string(),
-  orgUnitId: zod.number().int().positive().nullable().optional(),
+  criticality: zod
+    .enum(["MC", "BC+", "BC", "BO", "OP"])
+    .default(getTeamsResponseCriticalityDefault),
   overallLevel: zod.number(),
   assessmentStatus: zod.enum([
     "planned",
@@ -39,19 +43,33 @@ export const GetTeamsResponse = zod.array(GetTeamsResponseItem);
 /**
  * @summary Create a new team
  */
+export const createTeamBodyCriticalityDefault = `BC`;
+export const createTeamBodyTeamTypeDefault = `service`;
+
 export const CreateTeamBody = zod.object({
   name: zod.string(),
   description: zod.string(),
-  orgUnitId: zod.number().int().positive().nullable().optional(),
+  orgUnitId: zod.number().nullish(),
+  criticality: zod
+    .enum(["MC", "BC+", "BC", "BO", "OP"])
+    .default(createTeamBodyCriticalityDefault),
+  teamType: zod
+    .enum(["product", "platform", "service"])
+    .default(createTeamBodyTeamTypeDefault),
 });
 
 /**
  * @summary Get soft-deleted teams
  */
+export const getDeletedTeamsResponseCriticalityDefault = `BC`;
+
 export const GetDeletedTeamsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
   description: zod.string(),
+  criticality: zod
+    .enum(["MC", "BC+", "BC", "BO", "OP"])
+    .default(getDeletedTeamsResponseCriticalityDefault),
   overallLevel: zod.number(),
   assessmentStatus: zod.enum([
     "planned",
@@ -76,7 +94,6 @@ export const GetTeamResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   description: zod.string(),
-  orgUnitId: zod.number().int().positive().nullable().optional(),
   overallLevel: zod.number(),
   assessmentStatus: zod.enum([
     "planned",
@@ -111,14 +128,20 @@ export const UpdateTeamParams = zod.object({
 export const UpdateTeamBody = zod.object({
   name: zod.string(),
   description: zod.string(),
-  orgUnitId: zod.number().int().positive().nullable().optional(),
+  orgUnitId: zod.number().nullish(),
+  criticality: zod.enum(["MC", "BC+", "BC", "BO", "OP"]).optional(),
+  teamType: zod.enum(["product", "platform", "service"]).optional(),
 });
+
+export const updateTeamResponseCriticalityDefault = `BC`;
 
 export const UpdateTeamResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   description: zod.string(),
-  orgUnitId: zod.number().int().positive().nullable().optional(),
+  criticality: zod
+    .enum(["MC", "BC+", "BC", "BO", "OP"])
+    .default(updateTeamResponseCriticalityDefault),
   overallLevel: zod.number(),
   assessmentStatus: zod.enum([
     "planned",
@@ -149,10 +172,15 @@ export const RestoreTeamParams = zod.object({
   teamId: zod.coerce.number(),
 });
 
+export const restoreTeamResponseCriticalityDefault = `BC`;
+
 export const RestoreTeamResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   description: zod.string(),
+  criticality: zod
+    .enum(["MC", "BC+", "BC", "BO", "OP"])
+    .default(restoreTeamResponseCriticalityDefault),
   overallLevel: zod.number(),
   assessmentStatus: zod.enum([
     "planned",
@@ -181,10 +209,15 @@ export const UpdateTeamStatusBody = zod.object({
   ]),
 });
 
+export const updateTeamStatusResponseCriticalityDefault = `BC`;
+
 export const UpdateTeamStatusResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   description: zod.string(),
+  criticality: zod
+    .enum(["MC", "BC+", "BC", "BO", "OP"])
+    .default(updateTeamStatusResponseCriticalityDefault),
   overallLevel: zod.number(),
   assessmentStatus: zod.enum([
     "planned",
@@ -264,6 +297,61 @@ export const DeleteArtifactParams = zod.object({
 });
 
 export const DeleteArtifactResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary Get organizational units tree
+ */
+export const GetOrgUnitsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  parentId: zod.number().nullish(),
+  children: zod.array(zod.unknown()),
+  teamCount: zod.number(),
+});
+export const GetOrgUnitsResponse = zod.array(GetOrgUnitsResponseItem);
+
+/**
+ * @summary Create organizational unit
+ */
+export const CreateOrgUnitBody = zod.object({
+  name: zod.string(),
+  description: zod.string().nullish(),
+  parentId: zod.number().nullish(),
+});
+
+/**
+ * @summary Update organizational unit
+ */
+export const UpdateOrgUnitParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateOrgUnitBody = zod.object({
+  name: zod.string().optional(),
+  description: zod.string().nullish(),
+  parentId: zod.number().nullish(),
+});
+
+export const UpdateOrgUnitResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  parentId: zod.number().nullish(),
+  children: zod.array(zod.unknown()),
+  teamCount: zod.number(),
+});
+
+/**
+ * @summary Delete organizational unit
+ */
+export const DeleteOrgUnitParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteOrgUnitResponse = zod.object({
   success: zod.boolean(),
 });
 
