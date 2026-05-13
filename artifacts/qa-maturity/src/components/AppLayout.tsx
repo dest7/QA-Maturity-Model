@@ -16,13 +16,19 @@ import {
   useRestoreTeam,
   getGetTeamsQueryKey,
   getGetDeletedTeamsQueryKey,
+  useCreateOrgUnit,
+  useUpdateOrgUnit,
+  useDeleteOrgUnit,
+  useGetOrgUnits,
+  getGetOrgUnitsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Target, Plus, Loader2, BarChart2, Trash2, RotateCcw, ChevronDown, ChevronUp, ArchiveX } from "lucide-react";
+import { Target, Plus, Loader2, BarChart2, Trash2, RotateCcw, ChevronDown, ChevronUp, ArchiveX, FolderPlus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { CreateTeamModal } from "@/components/CreateTeamModal";
 import { EditTeamModal } from "@/components/EditTeamModal";
+import { AddEditOrgUnitModal } from "@/components/AddEditOrgUnitModal";
 import { UserMenu } from "@/components/UserMenu";
 import { OrgTree } from "@/components/OrgTree";
 import { Button } from "@/components/ui/button";
@@ -47,14 +53,59 @@ function SidebarContent({ children }: { children: React.ReactNode }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { canManageTeams, canViewMetrics } = useAuth();
+  const { canManageTeams, canViewMetrics, canCreateTeam } = useAuth();
 
   const isAdmin = canManageTeams();
+  const canCreate = canCreateTeam();
   const showMetrics = canViewMetrics();
 
-  const [editingTeam, setEditingTeam] = useState<{ id: number; name: string; description: string } | null>(null);
+  const [editingTeam, setEditingTeam] = useState<{ id: number; name: string; description: string; orgUnitId?: number | null } | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+
+  // Управление подразделениями
+  const [orgUnitModalOpen, setOrgUnitModalOpen] = useState(false);
+  const [editingOrgUnit, setEditingOrgUnit] = useState<{ id: number; name: string; description: string | null; parentId: number | null } | null>(null);
+  const [defaultParentId, setDefaultParentId] = useState<number | null>(null);
+  const { data: orgTree } = useGetOrgUnits();
+
+  const { mutate: createOrgUnit, isPending: isCreatingOrg } = useCreateOrgUnit({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetOrgUnitsQueryKey() });
+        toast({ title: "Подразделение создано", description: "Организационная структура обновлена." });
+        setOrgUnitModalOpen(false);
+      },
+      onError: () => {
+        toast({ title: "Ошибка", description: "Не удалось создать подразделение.", variant: "destructive" });
+      },
+    },
+  });
+
+  const { mutate: updateOrgUnit, isPending: isUpdatingOrg } = useUpdateOrgUnit({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetOrgUnitsQueryKey() });
+        toast({ title: "Подразделение обновлено", description: "Изменения сохранены." });
+        setOrgUnitModalOpen(false);
+      },
+      onError: () => {
+        toast({ title: "Ошибка", description: "Не удалось обновить подразделение.", variant: "destructive" });
+      },
+    },
+  });
+
+  const { mutate: deleteOrgUnit, isPending: isDeletingOrg } = useDeleteOrgUnit({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetOrgUnitsQueryKey() });
+        toast({ title: "Подразделение удалено", description: "Команды перемещены в корень или к родителю." });
+      },
+      onError: () => {
+        toast({ title: "Ошибка", description: "Не удалось удалить подразделение.", variant: "destructive" });
+      },
+    },
+  });
 
   const { mutate: deleteTeam, isPending: isDeleting } = useDeleteTeam({
     mutation: {
@@ -107,6 +158,23 @@ const teamToDelete = Array.isArray(teams) ? teams.find((t) => t.id === deleteCon
 
         {/* Список активных команд — сгруппирован по оргструктуре */}
         <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+          {/* Кнопка создания команды */}
+          {canCreate && (
+            <div className="px-2 mb-3">
+              <CreateTeamModal
+                trigger={
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-sidebar-foreground/80 hover:text-foreground border-sidebar-border shadow-sm hover:bg-sidebar-accent group h-11 transition-all"
+                  >
+                    <Plus className="mr-2 h-4 w-4 text-primary/70 group-hover:text-primary transition-colors" />
+                    Add New Team
+                  </Button>
+                }
+              />
+            </div>
+          )}
+
           <div className="text-[11px] font-bold text-sidebar-foreground/40 uppercase tracking-widest mb-3 px-2 mt-1 flex items-center gap-2">
             <BarChart2 size={12} /> Active Teams
           </div>
@@ -121,8 +189,22 @@ const teamToDelete = Array.isArray(teams) ? teams.find((t) => t.id === deleteCon
             <OrgTree
               teams={teams ?? []}
               isAdmin={isAdmin}
-              onEditTeam={(team) => setEditingTeam({ id: team.id, name: team.name, description: team.description ?? "" })}
+              onEditTeam={(team) => setEditingTeam({ id: team.id, name: team.name, description: team.description ?? "", orgUnitId: team.orgUnitId ?? null })}
               onDeleteTeam={(id) => setDeleteConfirmId(id)}
+              onAddOrgUnit={(parentId) => {
+                setDefaultParentId(parentId ?? null);
+                setEditingOrgUnit(null);
+                setOrgUnitModalOpen(true);
+              }}
+              onEditOrgUnit={(unit) => {
+                setEditingOrgUnit(unit);
+                setOrgUnitModalOpen(true);
+              }}
+              onDeleteOrgUnit={(id) => {
+                if (confirm("Вы уверены, что хотите удалить это подразделение? Команды будут перемещены к родителю или в корень.")) {
+                  deleteOrgUnit({ orgUnitId: id });
+                }
+              }}
             />
           )}
 
@@ -193,23 +275,6 @@ const teamToDelete = Array.isArray(teams) ? teams.find((t) => t.id === deleteCon
           )}
         </div>
 
-        {/* Кнопка добавления команды — только для admin */}
-        {isAdmin && (
-          <div className="px-4 pt-4 border-t border-sidebar-border bg-sidebar/50">
-            <CreateTeamModal
-              trigger={
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-sidebar-foreground/80 hover:text-foreground border-sidebar-border shadow-sm hover:bg-sidebar-accent group h-11 transition-all"
-                >
-                  <Plus className="mr-2 h-4 w-4 text-primary/70 group-hover:text-primary transition-colors" />
-                  Add New Team
-                </Button>
-              }
-            />
-          </div>
-        )}
-
         {/* Меню пользователя */}
         <UserMenu />
       </aside>
@@ -259,6 +324,20 @@ const teamToDelete = Array.isArray(teams) ? teams.find((t) => t.id === deleteCon
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Модальное окно добавления/редактирования подразделения */}
+      {isAdmin && (
+        <AddEditOrgUnitModal
+          open={orgUnitModalOpen}
+          onOpenChange={setOrgUnitModalOpen}
+          orgTree={orgTree ?? []}
+          editUnit={editingOrgUnit}
+          defaultParentId={defaultParentId}
+          isPending={isCreatingOrg || isUpdatingOrg}
+          onCreate={(data) => createOrgUnit({ data })}
+          onUpdate={(id, data) => updateOrgUnit({ orgUnitId: id, data })}
+        />
+      )}
     </div>
   );
 }

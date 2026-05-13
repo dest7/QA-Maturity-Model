@@ -241,12 +241,15 @@ export function MetricsPage() {
   // Загрузка данных гистограммы
   useEffect(() => {
     setIsHistogramLoading(true);
-    fetch(`${BASE}/api/metrics/history?period=${histogramPeriod}`, { credentials: "include" })
+    const url = selectedOrgUnitId
+      ? `${BASE}/api/metrics/history?period=${histogramPeriod}&orgUnitId=${selectedOrgUnitId}`
+      : `${BASE}/api/metrics/history?period=${histogramPeriod}`;
+    fetch(url, { credentials: "include" })
       .then((res) => res.ok ? res.json() : Promise.resolve({ snapshots: [] }))
       .then((result) => setHistogramData(result.snapshots || []))
       .catch(() => setHistogramData([]))
       .finally(() => setIsHistogramLoading(false));
-  }, [histogramPeriod]);
+  }, [histogramPeriod, selectedOrgUnitId]);
 
   // Создание снимка вручную
   const handleCreateSnapshot = useCallback(() => {
@@ -268,7 +271,10 @@ export function MetricsPage() {
         // Перезагружаем гистограмму
         setHistogramData([]);
         setTimeout(() => {
-          fetch(`${BASE}/api/metrics/history?period=${histogramPeriod}`, { credentials: "include" })
+          const url = selectedOrgUnitId
+            ? `${BASE}/api/metrics/history?period=${histogramPeriod}&orgUnitId=${selectedOrgUnitId}`
+            : `${BASE}/api/metrics/history?period=${histogramPeriod}`;
+          fetch(url, { credentials: "include" })
             .then((res) => res.ok ? res.json() : Promise.resolve({ snapshots: [] }))
             .then((result) => setHistogramData(result.snapshots || []));
         }, 500);
@@ -278,7 +284,7 @@ export function MetricsPage() {
         setIsCreatingSnapshot(false);
         setTimeout(() => setSnapshotSuccess(null), 5000);
       });
-  }, [histogramPeriod]);
+  }, [histogramPeriod, selectedOrgUnitId]);
 
   // Найти имя выбранного узла для отображения в picker
   function findNodeName(nodes: OrgUnitNode[], id: number): string | null {

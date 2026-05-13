@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { OrgUnitPicker } from "@/components/OrgUnitPicker";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +33,7 @@ import {
 const formSchema = z.object({
   name: z.string().min(3, "Team name must be at least 3 characters"),
   description: z.string().min(10, "Provide a brief description (min 10 chars)"),
+  orgUnitId: z.number().int().positive().nullable().optional(),
 });
 
 export function CreateTeamModal({ trigger }: { trigger: React.ReactNode }) {
@@ -45,6 +47,7 @@ export function CreateTeamModal({ trigger }: { trigger: React.ReactNode }) {
     defaultValues: {
       name: "",
       description: "",
+      orgUnitId: null,
     },
   });
 
@@ -111,6 +114,22 @@ export function CreateTeamModal({ trigger }: { trigger: React.ReactNode }) {
                       placeholder="Briefly describe this team's focus..."
                       className="resize-none bg-background/50 focus-visible:ring-primary/30 min-h-[100px]"
                       {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="orgUnitId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-foreground/80">Подразделение</FormLabel>
+                  <FormControl>
+                    <OrgUnitPicker
+                      value={field.value ?? null}
+                      onChange={(orgUnitId) => field.onChange(orgUnitId)}
                     />
                   </FormControl>
                   <FormMessage />

@@ -9,8 +9,17 @@
  */
 
 import bcrypt from "bcryptjs";
-import { db, skillsTable, teamsTable, teamSkillLevelsTable, usersTable, orgUnitsTable } from "@workspace/db";
-import { isNull, eq } from "drizzle-orm";
+import {
+  db,
+  skillsTable,
+  teamsTable,
+  teamSkillLevelsTable,
+  usersTable,
+  orgUnitsTable,
+  teamSkillSnapshotsTable,
+  teamSkillHistoryTable,
+} from "@workspace/db";
+import { isNull, eq, and, gte, lte } from "drizzle-orm";
 
 // ─── Справочник навыков (15 штук) ────────────────────────────────────────────
 
@@ -607,6 +616,14 @@ export async function seedIfEmpty(): Promise<void> {
     const allTeams = await db.select().from(teamsTable).where(isNull(teamsTable.deletedAt));
     const teamIds = allTeams.map((t) => t.id);
     await seedUsersIfEmpty(teamIds);
+    
+    // Проверяем наличие snapshot'ов — если нет, генерируем исторические данные
+    const existingSnapshots = await db.select().from(teamSkillSnapshotsTable).limit(1);
+    if (existingSnapshots.length === 0 && allTeams.length > 0) {
+      console.log("No snapshots found — generating historical data...");
+      await generateSnapshots();
+      await generateHistory();
+    }
     return;
   }
 
@@ -669,4 +686,136 @@ export async function seedIfEmpty(): Promise<void> {
   console.log(`Seed complete. ${allCreatedTeamIds.length} teams created.`);
 
   await seedUsersIfEmpty(allCreatedTeamIds);
+  
+  // Генерируем исторические данные для метрик
+  await generateSnapshots();
+  await generateHistory();
+}
+
+// ─── Генерация исторических данных для метрик ───────────────────────────────
+
+/**
+ * Генерирует ежедневные snapshot'ы уровней навыков для всех команд.
+ * Период: 1 октября 2025 — текущий день.
+ * Snapshot'ы консистентны с текущими данными в team_skill_levels.
+ */
+export async function generateSnapshots() {
+  console.log("Generating historical snapshots (Oct 1, 2025 — today)...");
+
+  const startDate = new Date("2025-10-01");
+  const today = new Date();
+  const totalDays = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+  // Получаем все активные команды и их текущие уровни навыков
+  const teams = await db.select().from(teamsTable).where(isNull(teamsTable.deletedAt));
+  const skills = await db.select().from(skillsTable);
+
+  // Получаем текущие уровни для всех команд
+  const currentLevels = await db.select().from(teamSkillLevelsTable);
+  const levelsMap = new Map<string, number>();
+  for (const level of currentLevels) {
+    levelsMap.set(`${level.teamId}-${level.skillId}`, level.level);
+  }
+
+  const snapshots = [];
+  const snapshotDate = new Date(startDate);
+
+  while (snapshotDate <= today) {
+    const daysFromStart = Math.floor((snapshotDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const progress = daysFromStart / totalDays; // 0.0 → 1.0
+
+    for (const team of teams) {
+      for (const skill of skills) {
+        const currentLevel = levelsMap.get(`${team.id}-${skill.id}`) ?? 0;
+
+        // Прогрессивный рост уровня: к текущей дате должен быть currentLevel
+        // В начале периода уровень ниже, постепенно растёт
+        const historicalLevel = Math.max(0, Math.floor(currentLevel * progress));
+
+        snapshots.push({
+          teamId: team.id,
+          skillId: skill.id,
+          level: historicalLevel,
+          snapshotDate: snapshotDate.toISOString().split("T")[0],
+        });
+      }
+    }
+
+    snapshotDate.setDate(snapshotDate.getDate() + 1);
+  }
+
+  // Batch insert по 1000 записей
+  const batchSize = 1000;
+  for (let i = 0; i < snapshots.length; i += batchSize) {
+    const batch = snapshots.slice(i, i + batchSize);
+    await db.insert(teamSkillSnapshotsTable).values(batch);
+  }
+
+  console.log(`  ✓ Generated ${snapshots.length} snapshots (${totalDays} days × ${teams.length} teams × ${skills.length} skills)`);
+}
+
+/**
+ * Генерирует историю изменений уровней навыков (2 изменения на навык).
+ * Используется для аудита и страницы "Динамика зрелости навыков".
+ */
+export async function generateHistory() {
+  console.log("Generating skill level history (2 changes per skill)...");
+
+  const teams = await db.select().from(teamsTable).where(isNull(teamsTable.deletedAt));
+  const skills = await db.select().from(skillsTable);
+  const users = await db.select().from(usersTable);
+
+  const history = [];
+  const today = new Date();
+  const periodStart = new Date("2025-10-01");
+
+  for (const team of teams) {
+    for (const skill of skills) {
+      // Генерируем 2 изменения на каждый навык
+      for (let changeIdx = 0; changeIdx < 2; changeIdx++) {
+        // Первое изменение: октябрь 2025 — январь 2026
+        // Второе изменение: февраль 2026 — апрель 2026
+        const changeDate = new Date(periodStart);
+        const daysOffset = changeIdx === 0
+          ? Math.floor(Math.random() * 90)  // 0-90 дней (окт-дек)
+          : 120 + Math.floor(Math.random() * 90);  // 120-210 дней (фев-апр)
+        changeDate.setDate(changeDate.getDate() + daysOffset);
+
+        const oldLevel = changeIdx === 0 ? 0 : Math.floor(Math.random() * 2);
+        const newLevel = Math.min(3, oldLevel + 1);
+        const userId = users[Math.floor(Math.random() * users.length)]?.id ?? null;
+
+        history.push({
+          teamId: team.id,
+          skillId: skill.id,
+          oldLevel: changeIdx === 0 ? null : oldLevel,
+          newLevel,
+          changedAt: changeDate,  // ← Date объект, не строка
+          changedByUserId: userId,
+        });
+      }
+    }
+  }
+
+  await db.insert(teamSkillHistoryTable).values(history);
+  console.log(`  ✓ Generated ${history.length} history records (${teams.length} teams × ${skills.length} skills × 2 changes)`);
+}
+
+/**
+ * Полная перегенерация данных для метрик.
+ * Очищает старые snapshot'ы и history, затем создаёт новые.
+ */
+export async function regenerateMetricsData() {
+  console.log("Regenerating metrics data...");
+
+  console.log("  Clearing old snapshots...");
+  await db.delete(teamSkillSnapshotsTable);
+
+  console.log("  Clearing old history...");
+  await db.delete(teamSkillHistoryTable);
+
+  await generateSnapshots();
+  await generateHistory();
+
+  console.log("Metrics data regeneration complete!");
 }

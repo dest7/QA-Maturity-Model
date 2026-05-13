@@ -135,7 +135,9 @@ export const teamSkillHistoryTable = pgTable("team_skill_history", {
 
 // Zod-схемы для валидации входных данных (omit исключает поля, заполняемые сервером)
 export const insertSkillSchema = createInsertSchema(skillsTable).omit({ id: true });
-export const insertTeamSchema = createInsertSchema(teamsTable).omit({ id: true, createdAt: true, overallLevel: true, lastAssessedAt: true });
+export const insertTeamSchema = createInsertSchema(teamsTable).omit({ id: true, createdAt: true, overallLevel: true, lastAssessedAt: true }).extend({
+  orgUnitId: z.number().int().positive().nullable().optional(),
+});
 export const insertTeamSkillLevelSchema = createInsertSchema(teamSkillLevelsTable).omit({ id: true });
 export const insertTeamSkillArtifactSchema = createInsertSchema(teamSkillArtifactsTable).omit({ id: true, createdAt: true });
 export const insertTeamSkillSnapshotSchema = createInsertSchema(teamSkillSnapshotsTable).omit({ id: true, createdAt: true });

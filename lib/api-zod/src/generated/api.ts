@@ -22,6 +22,7 @@ export const GetTeamsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
   description: zod.string(),
+  orgUnitId: zod.number().int().positive().nullable().optional(),
   overallLevel: zod.number(),
   assessmentStatus: zod.enum([
     "planned",
@@ -41,6 +42,7 @@ export const GetTeamsResponse = zod.array(GetTeamsResponseItem);
 export const CreateTeamBody = zod.object({
   name: zod.string(),
   description: zod.string(),
+  orgUnitId: zod.number().int().positive().nullable().optional(),
 });
 
 /**
@@ -74,6 +76,7 @@ export const GetTeamResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   description: zod.string(),
+  orgUnitId: zod.number().int().positive().nullable().optional(),
   overallLevel: zod.number(),
   assessmentStatus: zod.enum([
     "planned",
@@ -108,12 +111,14 @@ export const UpdateTeamParams = zod.object({
 export const UpdateTeamBody = zod.object({
   name: zod.string(),
   description: zod.string(),
+  orgUnitId: zod.number().int().positive().nullable().optional(),
 });
 
 export const UpdateTeamResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   description: zod.string(),
+  orgUnitId: zod.number().int().positive().nullable().optional(),
   overallLevel: zod.number(),
   assessmentStatus: zod.enum([
     "planned",

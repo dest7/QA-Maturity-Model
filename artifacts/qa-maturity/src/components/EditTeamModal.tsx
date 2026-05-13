@@ -13,7 +13,7 @@
  *
  * После успешного сохранения:
  *   - Инвалидируются кэши getGetTeamsQueryKey() и getGetTeamQueryKey(team.id)
- *   - Показывается toast с подтверждением
+ *   - Показывается toast с подтверждением (с названием подразделения при перемещении)
  *   - Модал закрывается через onOpenChange(false)
  */
 
@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { OrgUnitPicker } from "@/components/OrgUnitPicker";
 import {
   Dialog,
   DialogContent,
@@ -45,14 +46,24 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
+interface OrgUnitNode {
+  id: number;
+  name: string;
+  description: string | null;
+  parentId: number | null;
+  children: OrgUnitNode[];
+  teamCount: number;
+}
+
 // Zod-схема валидации формы
 const formSchema = z.object({
   name: z.string().min(3, "Название должно содержать минимум 3 символа"),
   description: z.string().min(5, "Описание должно содержать минимум 5 символов"),
+  orgUnitId: z.number().int().positive().nullable().optional(),
 });
 
 interface EditTeamModalProps {
-  team: { id: number; name: string; description: string };
+  team: { id: number; name: string; description: string; orgUnitId?: number | null };
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -61,24 +72,57 @@ export function EditTeamModal({ team, open, onOpenChange }: EditTeamModalProps) 
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const [orgTree, setOrgTree] = useState<OrgUnitNode[]>([]);
+
+  // Загружаем дерево подразделений для отображения названий в toast
+  useEffect(() => {
+    const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+    fetch(`${BASE}/api/org-units`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setOrgTree(data))
+      .catch(() => setOrgTree([]));
+  }, []);
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: team.name, description: team.description },
+    defaultValues: { name: team.name, description: team.description, orgUnitId: team.orgUnitId ?? null },
   });
 
   // Сбрасываем форму при каждом открытии — подтягиваем актуальные данные команды
   useEffect(() => {
     if (open) {
-      form.reset({ name: team.name, description: team.description });
+      form.reset({ name: team.name, description: team.description, orgUnitId: team.orgUnitId ?? null });
     }
-  }, [open, team.name, team.description, form]);
+  }, [open, team.name, team.description, team.orgUnitId, form]);
 
   const { mutate: updateTeam, isPending } = useUpdateTeam({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (updatedTeam) => {
         queryClient.invalidateQueries({ queryKey: getGetTeamsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetTeamQueryKey(team.id) });
-        toast({ title: "Команда обновлена", description: `«${form.getValues("name")}» успешно изменена.` });
+
+        // Функция для поиска названия подразделения по ID в дереве
+        function findNodeName(nodes: OrgUnitNode[], id: number): string | null {
+          for (const node of nodes) {
+            if (node.id === id) return node.name;
+            const found = findNodeName(node.children, id);
+            if (found) return found;
+          }
+          return null;
+        }
+
+        // Проверяем, изменилось ли подразделение
+        const orgUnitChanged = team.orgUnitId !== updatedTeam.orgUnitId;
+        const orgUnitName = updatedTeam.orgUnitId 
+          ? findNodeName(orgTree, updatedTeam.orgUnitId) || `подразделение #${updatedTeam.orgUnitId}`
+          : 'без подразделения';
+
+        toast({
+          title: "Команда обновлена",
+          description: orgUnitChanged
+            ? `«${form.getValues("name")}» успешно изменена и перемещена ${orgUnitName}.`
+            : `«${form.getValues("name")}» успешно изменена.`
+        });
         onOpenChange(false);
       },
       onError: () => {
@@ -129,6 +173,22 @@ export function EditTeamModal({ team, open, onOpenChange }: EditTeamModalProps) 
                   <FormLabel className="text-foreground/80">Описание</FormLabel>
                   <FormControl>
                     <Textarea className="resize-none bg-background/50 focus-visible:ring-primary/30 min-h-[90px]" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="orgUnitId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-foreground/80">Подразделение</FormLabel>
+                  <FormControl>
+                    <OrgUnitPicker
+                      value={field.value ?? null}
+                      onChange={(orgUnitId) => field.onChange(orgUnitId)}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

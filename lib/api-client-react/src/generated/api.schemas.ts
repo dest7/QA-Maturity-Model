@@ -135,3 +135,32 @@ export interface ErrorResponse {
 export interface SuccessResponse {
   success: boolean;
 }
+
+export interface OrgUnit {
+  id: number;
+  name: string;
+  description: string | null;
+  parentId: number | null;
+  createdAt: string;
+}
+
+export interface OrgUnitNode {
+  id: number;
+  name: string;
+  description: string | null;
+  parentId: number | null;
+  children: OrgUnitNode[];
+  teamCount: number;
+}
+
+export interface CreateOrgUnitRequest {
+  name: string;
+  description?: string | null;
+  parentId?: number | null;
+}
+
+export interface UpdateOrgUnitRequest {
+  name?: string;
+  description?: string | null;
+  parentId?: number | null;
+}

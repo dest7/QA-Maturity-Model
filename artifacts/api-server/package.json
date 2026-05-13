@@ -8,7 +8,10 @@
     "build": "tsx ./build.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "regenerate-metrics": "tsx ../../scripts/regenerate-metrics-data.ts",
+    "regenerate-history": "tsx scripts/regenerate-history.ts",
+    "cleanup-test-data": "tsx ../../scripts/cleanup-test-data.ts"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",

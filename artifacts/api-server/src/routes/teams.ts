@@ -97,6 +97,7 @@ router.post("/", async (req, res) => {
     .values({
       name: body.name,
       description: body.description,
+      orgUnitId: body.orgUnitId ?? null,
       overallLevel: 0,
       assessmentStatus: "planned",
     })
@@ -155,7 +156,11 @@ router.put("/:teamId", async (req, res) => {
 
   const [updated] = await db
     .update(teamsTable)
-    .set({ name: body.name, description: body.description })
+    .set({ 
+      name: body.name, 
+      description: body.description,
+      orgUnitId: body.orgUnitId ?? null,
+    })
     .where(eq(teamsTable.id, teamId))
     .returning();
 

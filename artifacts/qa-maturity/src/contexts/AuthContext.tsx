@@ -38,7 +38,9 @@ interface AuthContextValue {
   canAddArtifacts: (teamId: number) => boolean;
   /** Изменить статус оценки */
   canChangeStatus: (teamId: number) => boolean;
-  /** Создать/удалить/редактировать команды */
+  /** Создать команду (admin, manager, contributor, reviewer) */
+  canCreateTeam: () => boolean;
+  /** Создать/удалить/редактировать команды (admin) */
   canManageTeams: () => boolean;
   /** Страница метрик компании */
   canViewMetrics: () => boolean;
@@ -113,6 +115,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return user?.role === "admin";
   }, [user]);
 
+  const canCreateTeam = useCallback((): boolean => {
+    return !!user && ["admin", "manager", "contributor", "reviewer"].includes(user.role);
+  }, [user]);
+
   const canViewMetrics = useCallback((): boolean => {
     return !!user && ["admin", "manager"].includes(user.role);
   }, [user]);
@@ -126,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user, isLoading,
       login, logout,
       canEditLevels, canAddArtifacts, canChangeStatus,
-      canManageTeams, canViewMetrics, canManageUsers,
+      canCreateTeam, canManageTeams, canViewMetrics, canManageUsers,
     }}>
       {children}
     </AuthContext.Provider>

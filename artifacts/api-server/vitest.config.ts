@@ -16,5 +16,9 @@ export default defineConfig({
       'src/**/*.test.ts',      // Unit-тесты рядом с кодом
       'tests/**/*.test.ts',    // Интеграционные тесты
     ],
+    // Запуск тестов последовательно (важно для интеграционных тестов с БД)
+    sequence: {
+      concurrent: false,
+    },
   },
 });

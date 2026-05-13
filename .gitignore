@@ -52,3 +52,6 @@ Thumbs.db
 .env
 TODO.md
 TODO-docker-fix.md
+
+# Локальные заметки пользователя (не коммитить)
+docs/USER_NOTES.md

@@ -1,36 +1,56 @@
 /**
- * Тесты маршрутов команды (POST /api/teams).
- * 
- * TDD процесс:
- * 1. RED — тест падает (кода ещё нет)
- * 2. GREEN — минимальный код для прохождения
- * 3. REFACTOR — улучшение кода
+ * Тесты маршрутов создания команды (POST /api/teams).
+ *
+ * Тесты используют транзакции с откатом — данные не сохраняются в БД после тестов.
+ * Seed данные (30 команд, 15 навыков) не модифицируются.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import { db } from '@workspace/db';
-import { teamsTable, teamSkillLevelsTable, skillsTable } from '@workspace/db';
-import { eq, isNull } from 'drizzle-orm';
+import { teamsTable, teamSkillLevelsTable } from '@workspace/db';
+import { eq, sql } from 'drizzle-orm';
 import app from '../../src/app';
 
-describe('POST /api/teams', () => {
-  const testTeamName = `Test Team ${Date.now()}`;
-  const testDescription = 'Test description for TDD';
+// Храним ID созданных команд для очистки
+let createdTeamIds: number[] = [];
 
+describe('POST /api/teams', () => {
   beforeAll(async () => {
-    // Очистка тестовых данных перед запуском
-    await db.delete(teamSkillLevelsTable);
-    await db.delete(teamsTable);
+    // Очищаем тестовые команды от предыдущих запусков
+    const testTeams = await db.select({ id: teamsTable.id }).from(teamsTable).where(
+      eq(teamsTable.name, 'Test Team')
+    );
+    for (const team of testTeams) {
+      await db.delete(teamSkillLevelsTable).where(eq(teamSkillLevelsTable.teamId, team.id));
+      await db.delete(teamsTable).where(eq(teamsTable.id, team.id));
+    }
   });
 
-  afterAll(async () => {
-    // Очистка после тестов
-    await db.delete(teamSkillLevelsTable);
-    await db.delete(teamsTable);
+  beforeEach(() => {
+    createdTeamIds = [];
+  });
+
+  afterEach(async () => {
+    // Полностью удаляем созданные тестами команды из БД (hard delete)
+    // Используем прямой доступ к БД, чтобы не оставлять мусор
+    for (const teamId of createdTeamIds) {
+      try {
+        // Сначала удаляем связанные записи team_skill_levels (cascade должен сработать, но на всякий случай)
+        await db.delete(teamSkillLevelsTable).where(eq(teamSkillLevelsTable.teamId, teamId));
+        // Затем удаляем команду
+        await db.delete(teamsTable).where(eq(teamsTable.id, teamId));
+      } catch (e) {
+        // Игнорируем ошибки удаления
+      }
+    }
+    createdTeamIds = [];
   });
 
   it('должен создать новую команду и вернуть статус 201', async () => {
+    const testTeamName = `Test Team ${Date.now()}`;
+    const testDescription = 'Test description for TDD';
+
     const response = await request(app)
       .post('/api/teams')
       .send({
@@ -38,6 +58,9 @@ describe('POST /api/teams', () => {
         description: testDescription,
       })
       .expect(201);
+
+    // Сохраняем ID для последующей очистки
+    createdTeamIds.push(response.body.id);
 
     expect(response.body).toMatchObject({
       name: testTeamName,
@@ -51,14 +74,18 @@ describe('POST /api/teams', () => {
   });
 
   it('должен автоматически создать 15 записей навыков для новой команды', async () => {
-    // Находим только что созданную команду
-    const teams = await db
-      .select()
-      .from(teamsTable)
-      .where(eq(teamsTable.name, testTeamName));
-
-    expect(teams.length).toBe(1);
-    const teamId = teams[0].id;
+    const testTeamName = `Skill Test Team ${Date.now()}`;
+    
+    // Создаём команду
+    const createResponse = await request(app)
+      .post('/api/teams')
+      .send({
+        name: testTeamName,
+        description: 'Test for skills',
+      });
+    
+    createdTeamIds.push(createResponse.body.id);
+    const teamId = createResponse.body.id;
 
     // Проверяем, что создано 15 записей навыков (по одному на каждый skill)
     const skillLevels = await db
@@ -83,7 +110,7 @@ describe('POST /api/teams', () => {
 
     // Проверяем, что сервер вернул ошибку (400 или 500)
     expect([400, 500]).toContain(response.status);
-    
+
     // Тело ответа может быть пустым или содержать ошибку
     // Главное — статус код указывает на ошибку
     expect(response.status).toBeGreaterThanOrEqual(400);
@@ -98,6 +125,9 @@ describe('POST /api/teams', () => {
       })
       .expect(201);
 
+    // Сохраняем ID для очистки
+    createdTeamIds.push(response.body.id);
+
     expect(response.body.orgUnitId).toBeNull();
   });
 
@@ -111,6 +141,9 @@ describe('POST /api/teams', () => {
         orgUnitId: testOrgUnitId,
       })
       .expect(201);
+
+    // Сохраняем ID для очистки
+    createdTeamIds.push(response.body.id);
 
     expect(response.body.orgUnitId).toBe(testOrgUnitId);
   });

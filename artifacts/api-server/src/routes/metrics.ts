@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, teamsTable, skillsTable, teamSkillLevelsTable, orgUnitsTable, teamSkillSnapshotsTable, teamSkillHistoryTable } from "@workspace/db";
-import { isNull, sql, eq, and, gte, lte, lt } from "drizzle-orm";
+import { isNull, sql, eq, and, gte, lte, lt, inArray } from "drizzle-orm";
 import { requireAuth, requireManagerOrAdmin } from "../lib/auth";
 import { z } from "zod/v4";
 
@@ -90,7 +90,8 @@ router.get("/", requireAuth, requireManagerOrAdmin, async (req, res) => {
  * Доступно только для ролей manager и admin.
  *
  * Query params:
- *   period — 'week' (7 дней), 'month' (30 дней), 'quarter' (90 дней)
+ *   period — 'week' (7 дней), 'month' (30 дней), 'quarter' (90 дней), 'year' (365 дней)
+ *   orgUnitId — опционально, фильтр по узлу оргструктуры (включая всех потомков)
  *
  * Возвращает:
  *   snapshots — массив снимков по дням с распределением команд по уровням
@@ -99,6 +100,7 @@ router.get("/", requireAuth, requireManagerOrAdmin, async (req, res) => {
 router.get("/history", requireAuth, requireManagerOrAdmin, async (req, res) => {
   const periodSchema = z.enum(["week", "month", "quarter", "year"]);
   const period = periodSchema.parse(req.query.period ?? "week");
+  const queryOrgUnitId = req.query.orgUnitId ? z.coerce.number().int().positive().safeParse(req.query.orgUnitId).data : null;
 
   const daysMap = { week: 7, month: 30, quarter: 90, year: 365 };
   const days = daysMap[period];
@@ -108,6 +110,23 @@ router.get("/history", requireAuth, requireManagerOrAdmin, async (req, res) => {
   const fromDateStr = fromDate.toISOString().split("T")[0];
   const today = new Date().toISOString().split("T")[0];
 
+  // Если задан orgUnitId — BFS по дереву, собираем все узлы-потомки включительно
+  let filteredTeamIds: number[] | null = null;
+  if (queryOrgUnitId !== null) {
+    const allUnits = await db.select().from(orgUnitsTable);
+    const descendantIds = new Set<number>();
+    const queue = [queryOrgUnitId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      descendantIds.add(current);
+      allUnits.filter((u) => u.parentId === current).forEach((u) => queue.push(u.id));
+    }
+    const allActiveTeams = await db.select({ id: teamsTable.id, orgUnitId: teamsTable.orgUnitId }).from(teamsTable).where(isNull(teamsTable.deletedAt));
+    filteredTeamIds = allActiveTeams
+      .filter((t) => t.orgUnitId !== null && descendantIds.has(t.orgUnitId))
+      .map((t) => t.id);
+  }
+
   // Получаем все снимки за период (кроме сегодня)
   const snapshots = await db
     .select()
@@ -115,24 +134,30 @@ router.get("/history", requireAuth, requireManagerOrAdmin, async (req, res) => {
     .where(
       and(
         gte(teamSkillSnapshotsTable.snapshotDate, fromDateStr),
-        lt(teamSkillSnapshotsTable.snapshotDate, today)
+        lt(teamSkillSnapshotsTable.snapshotDate, today),
+        filteredTeamIds && filteredTeamIds.length > 0 ? inArray(teamSkillSnapshotsTable.teamId, filteredTeamIds) : undefined
       )
     )
     .orderBy(teamSkillSnapshotsTable.snapshotDate);
 
-  // Получаем сегодняшние изменения из истории
-  const todayHistory = await db
-    .select()
-    .from(teamSkillHistoryTable)
-    .where(gte(teamSkillHistoryTable.changedAt, new Date(today)))
-    .orderBy(teamSkillHistoryTable.changedAt);
+  // Получаем все активные команды для подсчёта (с учётом фильтра)
+  const allTeamsRaw = await db.select({ id: teamsTable.id }).from(teamsTable).where(isNull(teamsTable.deletedAt));
+  const allTeams = filteredTeamIds
+    ? allTeamsRaw.filter((t) => filteredTeamIds!.includes(t.id))
+    : allTeamsRaw;
 
-  // Получаем все команды для подсчёта
-  const allTeams = await db.select({ id: teamsTable.id }).from(teamsTable).where(isNull(teamsTable.deletedAt));
+  // Получаем количество всех навыков для расчёта среднего уровня команды
+  const allSkills = await db.select({ id: skillsTable.id }).from(skillsTable);
+  const totalSkills = allSkills.length;
 
-  // Если есть сегодняшние изменения, получаем текущие уровни всех команд
+  // Получаем текущие уровни для отфильтрованных команд (источник истины для сегодня)
   let currentTeamLevels: { teamId: number; skillId: number; level: number }[] = [];
-  if (todayHistory.length > 0) {
+  if (filteredTeamIds && filteredTeamIds.length > 0) {
+    currentTeamLevels = await db
+      .select({ teamId: teamSkillLevelsTable.teamId, skillId: teamSkillLevelsTable.skillId, level: teamSkillLevelsTable.level })
+      .from(teamSkillLevelsTable)
+      .where(inArray(teamSkillLevelsTable.teamId, filteredTeamIds));
+  } else {
     currentTeamLevels = await db
       .select({ teamId: teamSkillLevelsTable.teamId, skillId: teamSkillLevelsTable.skillId, level: teamSkillLevelsTable.level })
       .from(teamSkillLevelsTable);
@@ -150,41 +175,31 @@ router.get("/history", requireAuth, requireManagerOrAdmin, async (req, res) => {
     byDate.get(dateStr)!.push({ teamId: snapshot.teamId, skillId: snapshot.skillId, level: snapshot.level });
   }
 
-  // Добавляем сегодняшнее состояние (агрегируем последние изменения по каждому skill)
-  if (todayHistory.length > 0) {
-    const teamSkillToLevel = new Map<string, number>();
-    for (const h of todayHistory) {
-      const key = `${h.teamId}-${h.skillId}`;
-      teamSkillToLevel.set(key, h.newLevel);
-    }
-
-    const todayData: { teamId: number; skillId: number; level: number }[] = [];
-    for (const [key, level] of teamSkillToLevel.entries()) {
-      const [teamId, skillId] = key.split('-').map(Number);
-      todayData.push({ teamId, skillId, level });
-    }
-
-    if (todayData.length > 0) {
-      byDate.set(today, todayData);
-    }
+  // Добавляем сегодняшнее состояние — все текущие уровни для консистентности
+  if (currentTeamLevels.length > 0) {
+    byDate.set(today, currentTeamLevels);
   }
 
   // Формируем результат
   const result = [];
   for (const [dateStr, data] of byDate.entries()) {
-    // Группируем по командам и считаем средний уровень каждой
-    const teamLevels = new Map<number, number[]>();
+    // Группируем по командам и считаем уровень каждой
+    const teamSkills = new Map<number, number[]>();
     for (const item of data) {
-      if (!teamLevels.has(item.teamId)) {
-        teamLevels.set(item.teamId, []);
+      if (!teamSkills.has(item.teamId)) {
+        teamSkills.set(item.teamId, []);
       }
-      teamLevels.get(item.teamId)!.push(item.level);
+      teamSkills.get(item.teamId)!.push(item.level);
     }
 
     // teamDistribution: сколько команд на каждом уровне (0/1/2/3)
+    // Для расчёта уровня команды используем средний уровень по всем 15 навыкам
     const teamDistribution = { 0: 0, 1: 0, 2: 0, 3: 0 };
-    for (const [teamId, levels] of teamLevels.entries()) {
-      const avgLevel = levels.reduce((a, b) => a + b, 0) / levels.length;
+    for (const [teamId, levels] of teamSkills.entries()) {
+      // Если у команды есть не все навыки, считаем отсутствующие как 0
+      const missingSkills = totalSkills - levels.length;
+      const totalLevel = levels.reduce((a, b) => a + b, 0);
+      const avgLevel = totalLevel / totalSkills; // Делим на общее количество навыков
       const roundedLevel = Math.round(avgLevel);
       teamDistribution[roundedLevel as keyof typeof teamDistribution]++;
     }
