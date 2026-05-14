@@ -269,7 +269,7 @@ router.post("/snapshot", requireAuth, requireManagerOrAdmin, async (req, res) =>
     await db.insert(teamSkillSnapshotsTable).values(snapshotsToInsert);
   }
 
-  res.json({
+  return res.json({
     success: true,
     message: `Создано ${snapshotsToInsert.length} записей снимка`,
     date: today,
@@ -661,6 +661,142 @@ router.get("/teams/by-type", requireAuth, requireManagerOrAdmin, async (req, res
   });
 
   res.json({ byType });
+});
+
+/**
+ * GET /api/metrics/skills/summary — сводные метрики по навыкам.
+ * Доступно только для ролей manager и admin.
+ *
+ * Query params:
+ *   period — 'week' | 'month' | 'quarter' | 'year' (для trending/declining)
+ *   orgUnitId — опционально, фильтр по узлу оргструктуры (включая всех потомков)
+ *
+ * Возвращает:
+ *   topSkills — топ-3 развитых навыков (макс. средний уровень)
+ *   bottomSkills — топ-3 отсталых навыков (мин. средний уровень)
+ *   trendingSkills — топ-3 популярных в изучении (макс. изменений за период)
+ *   decliningSkills — топ-3 непопулярных (мин. изменений за период)
+ *   allSkills — все навыки для тепловой карты
+ */
+router.get("/skills/summary", requireAuth, requireManagerOrAdmin, async (req, res) => {
+  const periodSchema = z.enum(["week", "month", "quarter", "year"]);
+  const period = periodSchema.parse(req.query.period ?? "month");
+  const queryOrgUnitId = req.query.orgUnitId ? z.coerce.number().int().positive().safeParse(req.query.orgUnitId).data : null;
+
+  const daysMap = { week: 7, month: 30, quarter: 90, year: 365 };
+  const days = daysMap[period];
+
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - days);
+
+  // BFS по дереву для фильтрации
+  let filteredTeamIds: number[] | null = null;
+  if (queryOrgUnitId !== null) {
+    const allUnits = await db.select().from(orgUnitsTable);
+    const descendantIds = new Set<number>();
+    const queue = [queryOrgUnitId];
+    while (queue.length) {
+      const current = queue.shift()!;
+      descendantIds.add(current);
+      allUnits.filter((u) => u.parentId === current).forEach((u) => queue.push(u.id));
+    }
+    const allActiveTeams = await db.select({ id: teamsTable.id, orgUnitId: teamsTable.orgUnitId }).from(teamsTable).where(isNull(teamsTable.deletedAt));
+    filteredTeamIds = allActiveTeams
+      .filter((t) => t.orgUnitId !== null && descendantIds.has(t.orgUnitId))
+      .map((t) => t.id);
+  }
+
+  // Получаем все навыки
+  const skills = await db.select({ id: skillsTable.id, name: skillsTable.name, category: skillsTable.category }).from(skillsTable).orderBy(skillsTable.id);
+
+  // Получаем текущие уровни всех команд
+  const allLevels = await db.select().from(teamSkillLevelsTable);
+  const levels = filteredTeamIds
+    ? allLevels.filter((l) => filteredTeamIds!.includes(l.teamId))
+    : allLevels;
+
+  // Получаем историю изменений за период для trending/declining
+  const history = await db
+    .select({
+      teamId: teamSkillHistoryTable.teamId,
+      skillId: teamSkillHistoryTable.skillId,
+      changedAt: teamSkillHistoryTable.changedAt,
+    })
+    .from(teamSkillHistoryTable)
+    .where(gte(teamSkillHistoryTable.changedAt, fromDate));
+
+  // Фильтруем историю по командам из orgUnit (если задан фильтр)
+  const filteredHistory = filteredTeamIds
+    ? history.filter((h) => filteredTeamIds!.includes(h.teamId))
+    : history;
+
+  // Агрегация по навыкам
+  const allSkills = skills.map((skill) => {
+    const skillLevels = levels.filter((l) => l.skillId === skill.id);
+    const avgLevel = skillLevels.length > 0
+      ? skillLevels.reduce((sum, l) => sum + l.level, 0) / skillLevels.length
+      : 0;
+    const teamCount = skillLevels.filter((l) => l.level > 0).length;
+    const levelDistribution = { 0: 0, 1: 0, 2: 0, 3: 0 } as { 0: number; 1: number; 2: number; 3: number };
+
+    // Считаем распределение по уровням
+    const teamsForSkill = new Set<number>();
+    for (const l of skillLevels) {
+      teamsForSkill.add(l.teamId);
+      levelDistribution[l.level as keyof typeof levelDistribution]++;
+    }
+
+    // Для навыков, где нет данных, считаем все команды как уровень 0
+    const totalTeams = filteredTeamIds?.length ?? new Set(allLevels.map((l) => l.teamId)).size;
+    levelDistribution[0] = totalTeams - teamsForSkill.size;
+
+    return {
+      skillId: skill.id,
+      skillName: skill.name,
+      category: skill.category,
+      avgLevel: parseFloat(avgLevel.toFixed(2)),
+      teamCount,
+      levelDistribution,
+    };
+  });
+
+  // Сортировка для top/bottom
+  const sortedByAvg = [...allSkills].sort((a, b) => b.avgLevel - a.avgLevel);
+  const topSkills = sortedByAvg.slice(0, 3);
+  // Bottom skills — только с avgLevel ≤ 1.5
+  const bottomSkills = sortedByAvg
+    .filter((s) => s.avgLevel <= 1.5)
+    .slice(-3)
+    .reverse();
+
+  // Подсчёт изменений по навыкам за период
+  const changesBySkill = new Map<number, number>();
+  for (const h of filteredHistory) {
+    changesBySkill.set(h.skillId, (changesBySkill.get(h.skillId) ?? 0) + 1);
+  }
+
+  const skillsWithChanges = allSkills.map((s) => ({
+    ...s,
+    changesCount: changesBySkill.get(s.skillId) ?? 0,
+  }));
+
+  // Сортировка для trending/declining
+  const sortedByChanges = [...skillsWithChanges].sort((a, b) => b.changesCount - a.changesCount);
+  const trendingSkills = sortedByChanges.slice(0, 3);
+  // Declining skills — только с changesCount = 0 (или минимальные)
+  const decliningSkills = sortedByChanges
+    .filter((s) => s.changesCount === 0)
+    .slice(0, 3);
+
+  res.json({
+    period,
+    days,
+    topSkills,
+    bottomSkills,
+    trendingSkills,
+    decliningSkills,
+    allSkills,
+  });
 });
 
 export default router;

@@ -22,7 +22,8 @@ router.get("/", requireAuth, requireAdmin, async (_req, res) => {
 
 /** PATCH /api/users/:id — изменить роль/назначение/статус (admin) */
 router.patch("/:id", requireAuth, requireAdmin, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const idParam = req.params.id;
+  const id = typeof idParam === "string" ? parseInt(idParam) : NaN;
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const body = req.body as {

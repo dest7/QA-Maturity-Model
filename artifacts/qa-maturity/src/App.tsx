@@ -10,6 +10,7 @@ import { DashboardView } from "@/pages/DashboardView";
 import { TeamDashboard } from "@/pages/TeamDashboard";
 import { MetricsPage } from "@/pages/MetricsPage";
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
+import { AboutPage } from "@/pages/AboutPage";
 import NotFound from "@/pages/not-found";
 import { Loader2 } from "lucide-react";
 
@@ -48,6 +49,7 @@ function AppRoutes() {
           </Route>
           <Route path="/metrics" component={MetricsPage} />
           <Route path="/analytics/:tab?" component={AnalyticsPage} />
+          <Route path="/about" component={AboutPage} />
           <Route component={NotFound} />
         </Switch>
       </AppLayout>

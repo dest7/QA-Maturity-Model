@@ -146,7 +146,7 @@ const teamToDelete = Array.isArray(teams) ? teams.find((t) => t.id === deleteCon
       <aside className="w-72 flex flex-col bg-sidebar border-r border-sidebar-border z-20 shadow-2xl shadow-black/20">
         {/* Логотип */}
         <div className="p-6 border-b border-sidebar-border">
-          <Link href="/" className="flex items-center gap-3 cursor-pointer group">
+          <Link href="/about" className="flex items-center gap-3 cursor-pointer group">
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40 transition-all shadow-inner">
               <Target size={22} className="group-hover:scale-110 transition-transform duration-300" />
             </div>
